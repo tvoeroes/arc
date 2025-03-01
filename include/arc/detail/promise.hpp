@@ -52,7 +52,16 @@ public:
 	}
 
 	/** C++ promise API */
-	void return_value(T && value) noexcept { selfHandle->second.construct<T>(std::move(value)); }
+	void return_value(arc::util::const_removed_t<T> && value) noexcept
+	{
+		selfHandle->second.construct<T>(std::move(value));
+	}
+
+	/** C++ promise API */
+	void return_value(const arc::util::const_removed_t<T> & value) noexcept
+	{
+		selfHandle->second.construct<T>(value);
+	}
 
 	/** C++ promise API */
 	void return_value(const arc::promise_proxy<T> & value) noexcept

@@ -5,6 +5,7 @@
 #include "arc/fwd.hpp"
 #include "arc/util/check.hpp"
 #include "arc/util/std.hpp"
+#include "arc/util/util.hpp"
 
 /**
  * NOTE: This class uses the scary raw new+delete.
@@ -22,7 +23,8 @@ public:
 	{
 		arc_CHECK_Precondition(!value);
 		T * result = new T{ std::forward<Args>(args)... };
-		value = result;
+		DEBUG_valueIsConst = std::is_const_v<T>;
+		value = arc::util::remove_const<T>(result);
 		deleter = [](void * value) { delete reinterpret_cast<T *>(value); };
 		return result;
 	}
@@ -35,10 +37,21 @@ public:
 	template <typename T>
 	T * get_typed() const
 	{
+		arc_CHECK_Precondition(value && std::is_const_v<T> == DEBUG_valueIsConst);
 		return static_cast<T *>(value);
 	}
 
-	void * get_untyped() const { return value; }
+	void * get_untyped() const
+	{
+		arc_CHECK_Precondition(value && !DEBUG_valueIsConst);
+		return value;
+	}
+
+	const void * get_const_untyped() const
+	{
+		arc_CHECK_Precondition(value && DEBUG_valueIsConst);
+		return value;
+	}
 
 	~control_block();
 
@@ -89,6 +102,7 @@ private:
 	arc::detail::promise_base * promiseBase = nullptr;
 
 	void * value = nullptr;
+	bool DEBUG_valueIsConst = true;
 	std::exception_ptr exception;
 
 	void (*deleter)(void *) = nullptr;

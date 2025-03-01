@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <stack>
+#include <stdint.h>
 #include <unordered_map>
 
 #if __has_include(<tracy/Tracy.hpp>)
@@ -39,9 +40,11 @@ public:
 		TracyPlot(name, int64_t(0));
 	}
 
+	void Plot(int64_t value) { TracyPlot(name, value); }
+
 	~arc_TRACE_CONTAINER_BASE() { TracyPlot(name, int64_t(0)); }
 
-protected:
+private:
 	const char * name = "[Unnamed Containers]";
 };
 
@@ -60,7 +63,7 @@ public:
 	{
 		decltype(auto) result = container.try_emplace(std::forward<Args>(args)...);
 		if (result.second)
-			TracyPlot(name, int64_t(container.size()));
+			Plot(int64_t(container.size()));
 		return result;
 	}
 
@@ -69,7 +72,7 @@ public:
 	{
 		decltype(auto) result = container.emplace(std::forward<Args>(args)...);
 		if (result.second)
-			TracyPlot(name, int64_t(container.size()));
+			Plot(int64_t(container.size()));
 		return result;
 	}
 
@@ -77,7 +80,7 @@ public:
 	decltype(auto) erase(Args &&... args)
 	{
 		decltype(auto) result = container.erase(std::forward<Args>(args)...);
-		TracyPlot(name, int64_t(container.size()));
+		Plot(int64_t(container.size()));
 		return result;
 	}
 
@@ -104,14 +107,14 @@ public:
 	decltype(auto) emplace(Args &&... args)
 	{
 		decltype(auto) result = container.emplace(std::forward<Args>(args)...);
-		TracyPlot(name, int64_t(container.size()));
+		Plot(int64_t(container.size()));
 		return result;
 	}
 
 	void pop()
 	{
 		container.pop();
-		TracyPlot(name, int64_t(container.size()));
+		Plot(int64_t(container.size()));
 	}
 
 	arc_TRACE_INTERNAL_DEFINE_PERFECT_FORWARD(size, const noexcept);
@@ -136,13 +139,13 @@ public:
 	decltype(auto) emplace(Args &&... args)
 	{
 		decltype(auto) result = container.emplace(std::forward<Args>(args)...);
-		TracyPlot(name, int64_t(container.size()));
+		Plot(int64_t(container.size()));
 		return result;
 	}
 	void pop()
 	{
 		container.pop();
-		TracyPlot(name, int64_t(container.size()));
+		Plot(int64_t(container.size()));
 	}
 
 	arc_TRACE_INTERNAL_DEFINE_PERFECT_FORWARD(top, const);
@@ -182,6 +185,16 @@ inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
 	default:
 		return arc_TRACE_COLOR_MAKE(va, hi, lo);
 	}
+}
+
+inline void arc_TRACE_INTERNAL_MESSAGE_T_IMPL(std::string_view message)
+{
+	TracyMessage(message.data(), message.size());
+}
+
+inline void arc_TRACE_INTERNAL_LOCKABLE_RENAME_T_IMPL(auto & lock, std::string_view name)
+{
+	LockableName(lock, name.data(), name.size());
 }
 
 	/** -- EVENT -------------------------------------------------------------------------------- */
@@ -246,10 +259,7 @@ inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
 		do                                                                                         \
 		{                                                                                          \
 			if constexpr (active)                                                                  \
-			{                                                                                      \
-				std::string_view nameView{ message };                                              \
-				TracyMessage(nameView.data(), nameView.size());                                    \
-			}                                                                                      \
+				arc_TRACE_INTERNAL_MESSAGE_T_IMPL(message);                                        \
 		} while (0)
 
 	/** -- LOCKABLE ----------------------------------------------------------------------------- */
@@ -260,8 +270,7 @@ inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
 	#define arc_TRACE_LOCKABLE_RENAME_T(varName, name)                                             \
 		do                                                                                         \
 		{                                                                                          \
-			std::string_view nameView{ name };                                                     \
-			LockableName(lk, nameView.data(), nameView.size());                                    \
+			arc_TRACE_INTERNAL_LOCKABLE_RENAME_T_IMPL(varName, name);                              \
 		} while (0)
 
 	/** -- LOCKABLE UTIL ------------------------------------------------------------------------ */
@@ -311,6 +320,12 @@ inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
 	#define arc_TRACE_CONTAINER_QUEUE(T) std::queue<T>
 	#define arc_TRACE_CONTAINER_STACK(T) std::stack<T>
 	#define arc_TRACE_CONTAINER_CONFIGURE(...)
+class arc_TRACE_CONTAINER_BASE
+{
+public:
+	void Configure(const char * name_) {}
+	void Plot(int64_t value) {}
+};
 
 #endif
 

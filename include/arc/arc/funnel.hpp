@@ -15,8 +15,8 @@ struct arc::funnel
 
 	void push(const arc::future<T> & future)
 	{
-		future.async_wait_and_then([this](arc::result<T> result) mutable
-								   { complete_one(std::move(result)); });
+		future.async_wait_and_then(
+			[this](arc::result<T> result) mutable { complete_one(std::move(result)); });
 		size_++;
 	}
 

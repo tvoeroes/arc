@@ -99,7 +99,12 @@ struct arc::future<T>::impl
 			arc_CHECK_Assert(!self.handle->second.value);
 			std::rethrow_exception(self.handle->second.exception);
 		}
-		void * voidPtr = self.handle->second.get_untyped();
+
+		util::const_matching_void_t<T> * voidPtr = nullptr;
+		if constexpr (std::is_const_v<T>)
+			voidPtr = self.handle->second.get_const_untyped();
+		else
+			voidPtr = self.handle->second.get_untyped();
 		arc_CHECK_Assert(voidPtr);
 		T * ptr = self.resolve ? self.resolve(voidPtr) : static_cast<T *>(voidPtr);
 		self.resolve = nullptr;
@@ -119,7 +124,7 @@ struct arc::future<T>::impl
 		{
 			arc_CHECK_Precondition(!other.resolve);
 
-			return resolve_inheritance<U>;
+			return resolve_inheritance<U, std::is_const_v<U>>;
 		}
 	}
 
@@ -138,12 +143,19 @@ struct arc::future<T>::impl
 
 		using result_info = arc::detail::reflect_pointer_to_member<M>;
 
+		using class_type = std::conditional_t<
+			std::is_const_v<U>, const typename result_info::class_type,
+			typename result_info::class_type>;
+
+		using member_type = std::conditional_t<
+			std::is_const_v<U>, const typename result_info::member_type,
+			typename result_info::member_type>;
+
 		static_assert(M);
-		static_assert(std::is_same_v<U, typename result_info::class_type>);
+		static_assert(std::is_same_v<U, class_type>);
 
 		return resolve_member<
-			typename result_info::member_type, typename result_info::class_type,
-			result_info::member_pointer>;
+			member_type, class_type, result_info::member_pointer, std::is_const_v<U>>;
 	}
 
 	template <auto M, typename U>
@@ -154,14 +166,14 @@ struct arc::future<T>::impl
 		return result;
 	}
 
-	template <typename U>
-	static T * resolve_inheritance(void * p)
+	template <typename U, bool C>
+	static T * resolve_inheritance(std::conditional_t<C, const void, void> * p)
 	{
 		return static_cast<T *>(static_cast<U *>(p));
 	}
 
-	template <typename U, typename V, U V::*M>
-	static U * resolve_member(void * p)
+	template <typename U, typename V, U V::* M, bool C>
+	static U * resolve_member(std::conditional_t<C, const void, void> * p)
 	{
 		return p ? &(static_cast<V *>(p)->*M) : nullptr;
 	}
@@ -551,8 +563,7 @@ void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
 	const arc::detail::key & key = storeEntry.first;
 	arc::detail::control_block & controlBlock = storeEntry.second;
 
-	std::coroutine_handle<arc::detail::promise<arc::result_of_t<F>>> handle = [&]
-	{
+	std::coroutine_handle<arc::detail::promise<arc::result_of_t<F>>> handle = [&] {
 		static_assert(keyCount >= 0 && keyCount <= 2);
 
 		static constexpr bool isAlreadyCoro = arc::detail::is_coro_v<
@@ -566,8 +577,7 @@ void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
 			}
 			else
 			{
-				auto wrapper = [](F f, arc::context & ctx) -> arc::coro<arc::result_of_t<F>>
-				{
+				auto wrapper = [](F f, arc::context & ctx) -> arc::coro<arc::result_of_t<F>> {
 					/** */
 					co_return f(ctx);
 				};
@@ -585,8 +595,7 @@ void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
 			else
 			{
 				auto wrapper = [](F f, arc::context & ctx,
-								  const key_type_0 & key0) -> arc::coro<arc::result_of_t<F>>
-				{
+								  const key_type_0 & key0) -> arc::coro<arc::result_of_t<F>> {
 					/** */
 					co_return f(ctx, key0);
 				};
@@ -606,8 +615,7 @@ void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
 			else
 			{
 				auto wrapper = [](F f, arc::context & ctx, const key_type_0 & key0,
-								  const key_type_1 & key1) -> arc::coro<arc::result_of_t<F>>
-				{
+								  const key_type_1 & key1) -> arc::coro<arc::result_of_t<F>> {
 					/** */
 					co_return f(ctx, key0, key1);
 				};

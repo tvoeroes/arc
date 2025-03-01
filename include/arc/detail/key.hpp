@@ -25,15 +25,34 @@ public:
 	template <typename F>
 	static key make(F * f, arc::key_of_t<F, 0> && key0)
 	{
-		return { reinterpret_cast<function_storage_type>(f),
-				 key_type{ std::move(key0), arc::detail::global{} } };
+		static constexpr bool is_enum_0 = arc::key_of<F, 0>::is_scoped_enum;
+
+		if constexpr (is_enum_0)
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::to_underlying(key0), arc::detail::global{} } };
+		else
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::move(key0), arc::detail::global{} } };
 	}
 
 	template <typename F>
 	static key make(F * f, arc::key_of_t<F, 0> && key0, arc::key_of_t<F, 1> && key1)
 	{
-		return { reinterpret_cast<function_storage_type>(f),
-				 key_type{ std::move(key0), std::move(key1) } };
+		static constexpr bool is_enum_0 = arc::key_of<F, 0>::is_scoped_enum;
+		static constexpr bool is_enum_1 = arc::key_of<F, 1>::is_scoped_enum;
+
+		if constexpr (is_enum_0 && is_enum_1)
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::to_underlying(key0), std::to_underlying(key1) } };
+		else if constexpr (is_enum_0)
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::to_underlying(key0), std::move(key1) } };
+		else if constexpr (is_enum_1)
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::move(key0), std::to_underlying(key1) } };
+		else
+			return { reinterpret_cast<function_storage_type>(f),
+					 key_type{ std::move(key0), std::move(key1) } };
 	}
 
 	/**
@@ -49,7 +68,19 @@ public:
 	const T & get_key() const
 	{
 		static_assert(I < decltype(k_){}.size());
-		const T * result = std::get_if<T>(&k_[I]);
+		const T * result = nullptr;
+
+		if constexpr (std::is_scoped_enum_v<T>)
+		{
+			const auto * tmp = std::get_if<std::underlying_type_t<T>>(&k_[I]);
+			/* FIXME: Figure out and possibly resolve if this undefined behavior. */
+			result = reinterpret_cast<const T *>(tmp);
+		}
+		else
+		{
+			result = std::get_if<T>(&k_[I]);
+		}
+
 		arc_CHECK_Precondition(result);
 		return *result;
 	}

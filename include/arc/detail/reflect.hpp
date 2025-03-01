@@ -15,10 +15,10 @@ struct arc::detail::reflect_function<Return(Args...)>
 	using argument_type = std::tuple_element_t<Index, argument_tuple>;
 };
 
-template <typename U, typename V, U V::*M>
+template <typename U, typename V, U V::* M>
 struct arc::detail::reflect_pointer_to_member<M>
 {
 	using class_type = V;
 	using member_type = U;
-	static constexpr U V::*member_pointer = M;
+	static constexpr U V::* member_pointer = M;
 };

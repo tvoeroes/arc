@@ -10,8 +10,9 @@ namespace
 	template <typename T, typename Q, typename C, typename M>
 	void ThreadSafePush(T && element, Q & queue, C & conditionVariable, M & mutex)
 	{
-		arc::extra::on_scope_exit notifyOne{ [&conditionVariable]
-											 { conditionVariable.notify_one(); } };
+		arc::extra::on_scope_exit notifyOne{ [&conditionVariable] {
+			conditionVariable.notify_one();
+		} };
 		std::lock_guard lk{ mutex };
 		queue.emplace(std::move(element));
 	}
@@ -20,8 +21,9 @@ namespace
 	void ThreadSafePush(
 		T && element, Q1 & referenceQueue, Q2 & dataQueue, C & conditionVariable, M & mutex)
 	{
-		arc::extra::on_scope_exit notifyOne{ [&conditionVariable]
-											 { conditionVariable.notify_one(); } };
+		arc::extra::on_scope_exit notifyOne{ [&conditionVariable] {
+			conditionVariable.notify_one();
+		} };
 		std::lock_guard lk{ mutex };
 		referenceQueue.emplace(nullptr);
 		dataQueue.emplace(std::move(element));
@@ -30,8 +32,9 @@ namespace
 	template <typename T, typename V, typename C, typename M>
 	void ThreadSafeInsertSorted(T && element, V & vector, C & conditionVariable, M & mutex)
 	{
-		arc::extra::on_scope_exit notifyOne{ [&conditionVariable]
-											 { conditionVariable.notify_one(); } };
+		arc::extra::on_scope_exit notifyOne{ [&conditionVariable] {
+			conditionVariable.notify_one();
+		} };
 		std::lock_guard lk{ mutex };
 		arc::extra::insert_sorted(vector, std::move(element));
 	}
@@ -57,8 +60,7 @@ namespace
 		bool haveGarbage = false;
 
 		auto waitPredicate = [&queue, &garbage, &unusedCachesize, &vector, &tasks, &timerReady,
-							  &haveValue, &stopRequested, &haveGarbage, &stopToken]
-		{
+							  &haveValue, &stopRequested, &haveGarbage, &stopToken] {
 			haveGarbage = garbage.size() > unusedCachesize;
 			timerReady = vector.size() && vector[0].first <= arc::clock::now();
 			bool haveWorkScheduled = queue.size();
@@ -88,11 +90,9 @@ namespace
 		{
 			arc_CHECK_Assert(timerReady ? !!vector.size() : !!queue.size());
 
-			std::coroutine_handle handle = [&queue, &vector, &timerReady]
-			{
+			std::coroutine_handle handle = [&queue, &vector, &timerReady] {
 				arc::extra::on_scope_exit pop{
-					[&queue, &vector, &timerReady]
-					{
+					[&queue, &vector, &timerReady] {
 						if (timerReady)
 							vector.erase(vector.begin());
 						else

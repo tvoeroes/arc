@@ -70,6 +70,18 @@ struct CoroDerivedResult2 : CoroBaseResult
 	static arc::coro<CoroDerivedResult2> arc_make(arc::context & ctx) { co_return { 2 }; }
 };
 
+arc::coro<const CoroDerivedResult2> const_struct(arc::context & ctx) { co_return {}; }
+
+arc::coro<const int> const_int(arc::context & ctx) { co_return 72; }
+
+arc::coro<std::atomic_int> atomic_int(arc::context & ctx)
+{
+	arc::promise_proxy promise = co_await arc::get_promise_proxy<std::atomic_int>();
+	std::atomic_int * result = promise.construct();
+	*result = 72;
+	co_return promise;
+}
+
 TEST_CASE("Coro Synchronous Wait", "[Coro]")
 {
 	SECTION("using a key")
@@ -332,6 +344,86 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** lets abandon this future */
 		CHECK(future5);
 	}
+
+	SECTION("const T in future and result")
+	{
+		arc::context ctx;
+
+		arc::future<const int> const_int_future = ctx(const_int);
+		arc::future<std::atomic_int> atomic_int_future = ctx(atomic_int);
+		/** The following lines should fail to compile: */
+		/** arc::future<int> non_const_int_future_0 = ctx(const_int); */
+		/** arc::future<int> non_const_int_future_1 = const_int_future; */
+
+		/** The function returns a const int. */
+		arc::result<const int> const_int_result = const_int_future.active_wait();
+
+		/** const_int_result can not be modified. This fails to compile: */
+		/** const_int_result = 42; */
+
+		arc::result<std::atomic_int> atomic_int_result = atomic_int_future.active_wait();
+		arc::result<std::atomic_int> atomic_int_result_22 = ctx(atomic_int).active_wait();
+
+		/** atomic_int_result can be modified. */
+		int previous = atomic_int_result->fetch_add(2);
+
+		static constexpr auto member_ptr_tag = arc::util::value_tag<&CoroDerivedResult2::z>{};
+
+		arc::future<const CoroDerivedResult2> const_struct_future = ctx(const_struct);
+		arc::future<const int> const_int_future_2{ member_ptr_tag, const_struct_future };
+		arc::future<const int> const_int_future_3{ member_ptr_tag, std::move(const_struct_future) };
+		/** The following lines should fail to compile: */
+		/** arc::future<int> int_future_3{ member_ptr_tag, const_struct_future }; */
+		/** arc::future<int> int_future_4{ member_ptr_tag, std::move(const_struct_future) }; */
+
+		/** The following lines should fail to compile: */
+		/** arc::result<int> int_result_2 = const_int_result; */
+		/** arc::result<int> int_result_3 = std::move(const_int_result); */
+		/** arc::result<int> int_result_4{ const_int_result }; */
+		/** arc::result<int> int_result_5{ std::move(const_int_result) }; */
+
+		arc::future<const CoroBaseResult> const_struct_future_2 = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> const_struct_future_3 = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> const_struct_future_4 = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> const_struct_future_5 = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> const_struct_future_6 = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> const_struct_future_7 = ctx(const_struct);
+		arc::result<const CoroBaseResult> const_struct_res_0 = const_struct_future_3.active_wait();
+		arc::result<const CoroBaseResult> const_struct_res_1{ const_struct_future_4.active_wait() };
+		arc::result<const CoroDerivedResult2> const_struct_res_2{
+			const_struct_future_5.active_wait()
+		};
+		arc::result<const CoroDerivedResult2> const_struct_res_22 =
+			const_struct_future_6.active_wait();
+		arc::result<const CoroDerivedResult2> const_struct_res_33 =
+			const_struct_future_7.active_wait();
+		arc::result<const CoroBaseResult> const_struct_res_3{ const_struct_res_2 };
+		arc::result<const CoroBaseResult> const_struct_res_4 = const_struct_res_2;
+		arc::result<const CoroBaseResult> const_struct_res_5{ std::move(const_struct_res_2) };
+		arc::result<const CoroBaseResult> const_struct_res_6 = std::move(const_struct_res_22);
+		arc::result<const int> const_struct_res_7{ &const_struct_res_33->extra1,
+												   const_struct_res_33 };
+		/**
+		 * The following lines should fail to compile:
+		 * arc::result<int> const_struct_res_8{ &const_struct_res_33->extra1, const_struct_res_33 };
+		 **/
+
+		arc::result<const std::atomic_int> atomic_int_result_2 = atomic_int_result;
+		arc::result<const std::atomic_int> atomic_int_result_3{ atomic_int_result };
+		arc::result<const std::atomic_int> atomic_int_result_4{ std::move(atomic_int_result) };
+		arc::result<const std::atomic_int> atomic_int_result_5 = std::move(atomic_int_result_22);
+
+		arc::future<std::atomic_int> atomic_int_future_2 = ctx(atomic_int);
+		arc::future<std::atomic_int> atomic_int_future_3 = ctx(atomic_int);
+
+		/**
+		 * NOTE: The following lines do not work because support not implemented:
+		 * arc::future<const std::atomic_int> const_atomi_int_f_0 = atomic_int_future_2;
+		 * arc::future<const std::atomic_int> const_atomi_int_f_1{ atomic_int_future_2 };
+		 * arc::future<const std::atomic_int> const_atomi_int_f_2{ std::move(atomic_int_future_2) };
+		 * arc::future<const std::atomic_int> const_atomi_int_f_3 = std::move(atomic_int_future_3);
+		 */
+	}
 }
 
 void throw_on_bad_input_for_fibonacci(int64_t n)
@@ -511,6 +603,11 @@ struct CoroInPlace : private arc::extra::non_copyable_non_movable
 
 	static arc::coro<CoroInPlace> arc_make(arc::context & ctx)
 	{
+		/**
+		 * Non-copyable and non-movable types can be returned by in-place
+		 * constructing them. When in-place constructing, the promise must be
+		 * co_return-ed instead.
+		 */
 		arc::promise_proxy promise = co_await arc::get_promise_proxy<CoroInPlace>();
 		CoroInPlace * result = promise.construct(5);
 		co_return promise;
@@ -676,4 +773,41 @@ TEST_CASE("Global Coro", "[Coro]")
 
 	/** Adding as either arc::result or arc::awaitable works. */
 	ctx.set_caching_policy_global(r);
+}
+
+enum class EnumsWork : int64_t
+{
+	A,
+	B,
+	C,
+};
+
+arc::coro<bool> EnumsWorkCoro0(arc::context & ctx, const EnumsWork & x)
+{
+	co_return x == EnumsWork::B;
+}
+
+arc::coro<bool> EnumsWorkCoro1(arc::context & ctx, const EnumsWork & x, const int64_t & y)
+{
+	co_return x == EnumsWork::B;
+}
+
+arc::coro<bool> EnumsWorkCoro2(arc::context & ctx, const std::string & x, const EnumsWork & y)
+{
+	co_return y == EnumsWork::B;
+}
+
+arc::coro<bool> EnumsWorkCoro3(arc::context & ctx, const EnumsWork & x, const EnumsWork & y)
+{
+	co_return x == EnumsWork::B && y == EnumsWork::B;
+}
+
+TEST_CASE("Enums Work Coro", "[Coro]")
+{
+	arc::context ctx;
+
+	CHECK(*ctx(EnumsWorkCoro0, EnumsWork::B).active_wait());
+	CHECK(*ctx(EnumsWorkCoro1, EnumsWork::B, 5).active_wait());
+	CHECK(*ctx(EnumsWorkCoro2, "dummy", EnumsWork::B).active_wait());
+	CHECK(*ctx(EnumsWorkCoro3, EnumsWork::B, EnumsWork::B).active_wait());
 }

@@ -18,6 +18,9 @@ namespace arc::util
 	template <typename T, bool B>
 	static constexpr bool dependent_bool_v = B;
 
+	template <auto V, bool B>
+	static constexpr bool value_dependent_bool_v = B;
+
 	template <typename T>
 	struct type_tag
 	{};
@@ -39,4 +42,16 @@ namespace arc::util
 
 	template <typename... Args>
 	using tuple_cat_t = decltype(std::tuple_cat(std::declval<Args>()...));
+
+	template <typename T>
+	using const_removed_t = std::conditional_t<std::is_const_v<T>, std::remove_const_t<T>, T>;
+
+	template <typename T>
+	using const_matching_void_t = std::conditional_t<std::is_const_v<T>, const void, void>;
+
+	template <typename T>
+	const_removed_t<T> * remove_const(std::type_identity_t<T> * ptr)
+	{
+		return const_cast<const_removed_t<T> *>(ptr);
+	}
 }

@@ -36,12 +36,18 @@ private:
 public:
 	using type = std::remove_const_t<std::remove_reference_t<key_arg_type>>;
 
+	static constexpr bool is_scoped_enum = std::is_scoped_enum_v<type>;
+
+	using storage_type = std::conditional_t<
+		is_scoped_enum, std::underlying_type<type>, std::type_identity<type>>::type;
+
 	static_assert(
 		/**
 		 * NOTE: disallowing arc::detail::global (aka. std::nullopt) as argument
 		 *       for technical reasons
 		 */
-		/*std::is_same_v<type, arc::detail::global> ||*/ std::is_same_v<type, int64_t> ||
-			std::is_same_v<type, arc::tile> || std::is_same_v<type, std::string>,
+		/*std::is_same_v<storage_type, arc::detail::global> ||*/
+		std::is_same_v<storage_type, int64_t> || std::is_same_v<storage_type, arc::tile> ||
+			std::is_same_v<storage_type, std::string>,
 		"Unsupported key type.");
 };

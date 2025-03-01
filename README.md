@@ -117,3 +117,14 @@ result in profiler crashes or broken output.
 The Awaitable is part of the library name because `arc::future` used to be
 called `arc::awaitable` and arc just rolls off the tongue so it is staying that
 way.
+
+## Changelog
+
+### 0.3
+
+* Fix `arc_TRACE_MESSAGE_T` message and `arc_TRACE_LOCKABLE_RENAME_T` name
+  lifetime.
+* Const results support: `arc::coro<const T>`, `arc::future<const T>` and
+  `arc::result<const T>`.
+* `co_return const_variable;` support for `arc::coro`.
+* Support for `enum class` as key (int64_t only).

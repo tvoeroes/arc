@@ -21,7 +21,8 @@ BraceWrapping:
   BeforeCatch: true
   BeforeElse: true
   IndentBraces: false
-  BeforeLambdaBody: true
+  # Unfortunatelly true breaks AllowShortFunctionsOnASingleLine
+  BeforeLambdaBody: false
 BreakBeforeBraces: Custom
 AllowShortFunctionsOnASingleLine: All
 Cpp11BracedListStyle: false

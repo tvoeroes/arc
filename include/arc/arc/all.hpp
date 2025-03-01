@@ -18,13 +18,11 @@ public:
 		for (size_t i = 0; i < futures.size(); i++)
 		{
 			if (futures[i])
-				futures[i].async_wait_and_then(
-					[this, i](arc::result<T> r)
-					{
-						results[i] = std::move(r);
-						arc_CHECK_Assert(results[i]);
-						complete_one();
-					});
+				futures[i].async_wait_and_then([this, i](arc::result<T> r) {
+					results[i] = std::move(r);
+					arc_CHECK_Assert(results[i]);
+					complete_one();
+				});
 			else
 				complete_one();
 		}

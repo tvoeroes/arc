@@ -89,7 +89,7 @@ public:
 	auto operator co_await();
 
 private:
-	using resolve_type = T * (*)(void *);
+	using resolve_type = T * (*)(util::const_matching_void_t<T> *);
 
 	explicit future(arc::detail::handle && handle);
 

@@ -27,11 +27,11 @@ public:
 	/** copy constructor */
 	result(const result & other);
 
-	/** up-casting move constructor */
+	/** up-casting and add-const move constructor */
 	template <typename U>
 	result(result<U> && other);
 
-	/** up-casting copy constructor */
+	/** up-casting and add-const copy constructor */
 	template <typename U>
 	result(const result<U> & other);
 
@@ -49,11 +49,11 @@ public:
 	/** copy assignment */
 	result & operator=(const result & other);
 
-	/** up-casting move assignment */
+	/** up-casting and add-const move assignment */
 	template <typename U>
 	result & operator=(result<U> && other);
 
-	/** up-casting copy assignment */
+	/** up-casting and add-const copy assignment */
 	template <typename U>
 	result & operator=(const result<U> & other);
 
