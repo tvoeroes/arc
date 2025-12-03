@@ -10,6 +10,8 @@ template <typename T>
 struct arc::all
 {
 public:
+	all() = delete;
+
 	all(arc::context & ctx, std::span<arc::future<T>> futures)
 		: ctx{ ctx }
 		, futures{ futures }

@@ -68,8 +68,8 @@ public:
 	 * the result is ready.
 	 * @{
 	 */
-	void async_wait_and_then(std::move_only_function<void()> && callback) const;
-	void async_wait_and_then(std::move_only_function<void(arc::result<T>)> && callback) const;
+	void async_wait_and_then(arc::function<void()> && callback) const;
+	void async_wait_and_then(arc::function<void(arc::result<T>)> && callback) const;
 	/** @} */
 
 	/**

@@ -4,6 +4,16 @@
 
 namespace arc
 {
+	/**
+	 * NOTE: Because Clang doesn't support std::move_only_function yet.
+	 */
+	template <typename... Args>
+#if __cpp_lib_move_only_function >= 202110L
+	using function = std::move_only_function<Args...>;
+#else
+	using function = std::function<Args...>;
+#endif
+
 	struct context;
 
 	template <typename T>
@@ -14,8 +24,6 @@ namespace arc
 
 	template <typename T>
 	struct coro;
-
-	struct tile;
 
 	struct options;
 
@@ -41,6 +49,9 @@ namespace arc
 
 namespace arc::detail
 {
+	template <typename F>
+	struct key_impl;
+
 	template <typename T>
 	struct remove_coro
 	{
@@ -97,6 +108,9 @@ namespace arc::extra
 	template <typename Q, typename T = typename Q::value_type>
 	T queue_pop(Q & queue);
 
+	template <typename Q, typename T = typename Q::value_type>
+	T stack_pop(Q & queue);
+
 	template <typename T, typename Pred>
 	typename std::vector<T>::iterator insert_sorted(
 		std::vector<T> & vec, const T & item, Pred pred);
@@ -105,6 +119,10 @@ namespace arc::extra
 	typename std::vector<T>::iterator insert_sorted(std::vector<T> & vec, const T & item);
 
 	constexpr uint32_t FNV_1a_32(std::string_view str, uint32_t hash = 2166136261u);
+
+	struct FNV_1a_64;
+
+	using HashAlgorithm = FNV_1a_64;
 
 	template <typename T>
 	struct shared_guard;
@@ -158,9 +176,6 @@ namespace arc::detail
 
 	template <auto>
 	struct reflect_pointer_to_member;
-
-	template <typename F, size_t keyCount = arc::key_count_of_v<F>>
-	void create_shared_task(arc::detail::store_entry & storeEntry);
 }
 
 namespace arc::extra::detail

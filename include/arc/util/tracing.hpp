@@ -1,5 +1,7 @@
 #pragma once
 
+#include "arc/extra/algorithms.hpp"
+
 #include <queue>
 #include <stack>
 #include <stdint.h>
@@ -10,6 +12,37 @@
 #else
 	#undef arc_TRACE_INSTRUMENTATION_ENABLE
 #endif
+
+inline constexpr uint32_t arc_TRACE_COLOR_MAKE(uint8_t r, uint8_t g, uint8_t b)
+{
+	return uint32_t(r) << uint32_t(16) | uint32_t(g) << uint32_t(8) | uint32_t(b);
+}
+
+inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
+{
+	uint32_t hash = arc::extra::FNV_1a_32(str);
+
+	uint32_t va = hash & 0xffu;
+
+	uint32_t lo = 0x00u;
+	uint32_t hi = 0xffu;
+
+	switch ((hash >> 8u) % 6u) /** not a perfectly uniform distribution */
+	{
+	case 0:
+		return arc_TRACE_COLOR_MAKE(lo, hi, va);
+	case 1:
+		return arc_TRACE_COLOR_MAKE(hi, lo, va);
+	case 2:
+		return arc_TRACE_COLOR_MAKE(lo, va, hi);
+	case 3:
+		return arc_TRACE_COLOR_MAKE(hi, va, lo);
+	case 4:
+		return arc_TRACE_COLOR_MAKE(va, lo, hi);
+	default:
+		return arc_TRACE_COLOR_MAKE(va, hi, lo);
+	}
+}
 
 #if arc_TRACE_INSTRUMENTATION_ENABLE
 
@@ -156,37 +189,6 @@ private:
 	wrapped_type container;
 };
 
-inline constexpr uint32_t arc_TRACE_COLOR_MAKE(uint8_t r, uint8_t g, uint8_t b)
-{
-	return uint32_t(r) << uint32_t(16) | uint32_t(g) << uint32_t(8) | uint32_t(b);
-}
-
-inline constexpr uint32_t arc_TRACE_COLOR_MAKE(std::string_view str)
-{
-	uint32_t hash = arc::extra::FNV_1a_32(str);
-
-	uint32_t va = hash & 0xffu;
-
-	uint32_t lo = 0x00u;
-	uint32_t hi = 0xffu;
-
-	switch ((hash >> 8u) % 6u) /** not a perfectly uniform distribution */
-	{
-	case 0:
-		return arc_TRACE_COLOR_MAKE(lo, hi, va);
-	case 1:
-		return arc_TRACE_COLOR_MAKE(hi, lo, va);
-	case 2:
-		return arc_TRACE_COLOR_MAKE(lo, va, hi);
-	case 3:
-		return arc_TRACE_COLOR_MAKE(hi, va, lo);
-	case 4:
-		return arc_TRACE_COLOR_MAKE(va, lo, hi);
-	default:
-		return arc_TRACE_COLOR_MAKE(va, hi, lo);
-	}
-}
-
 inline void arc_TRACE_INTERNAL_MESSAGE_T_IMPL(std::string_view message)
 {
 	TracyMessage(message.data(), message.size());
@@ -259,7 +261,9 @@ inline void arc_TRACE_INTERNAL_LOCKABLE_RENAME_T_IMPL(auto & lock, std::string_v
 		do                                                                                         \
 		{                                                                                          \
 			if constexpr (active)                                                                  \
+			{                                                                                      \
 				arc_TRACE_INTERNAL_MESSAGE_T_IMPL(message);                                        \
+			}                                                                                      \
 		} while (0)
 
 	/** -- LOCKABLE ----------------------------------------------------------------------------- */
@@ -283,9 +287,18 @@ inline void arc_TRACE_INTERNAL_LOCKABLE_RENAME_T_IMPL(auto & lock, std::string_v
 	#define arc_TRACE_CONTAINER_STACK(T) arc_TRACE_stack<T>
 	#define arc_TRACE_CONTAINER_CONFIGURE(varName, name) varName.Configure(name)
 
-#else
+	/** -- SOURCE LOCATION UTILS ---------------------------------------------------------------- */
+	#define arc_SOURCE_LOCATION_ARG_0 const std::source_location & sourceLocation
+	#define arc_SOURCE_LOCATION_ARG_0_DEFAULT                                                      \
+		arc_SOURCE_LOCATION_ARG_0 = std::source_location::current()
 
-	#define arc_TRACE_COLOR_MAKE(...)
+	#define arc_SOURCE_LOCATION_ARG , arc_SOURCE_LOCATION_ARG_0
+	#define arc_SOURCE_LOCATION_ARG_DEFAULT                                                        \
+		arc_SOURCE_LOCATION_ARG = std::source_location::current()
+
+	#define arc_SOURCE_LOCATION_0 sourceLocation
+	#define arc_SOURCE_LOCATION , arc_SOURCE_LOCATION_0
+#else
 
 	/** -- EVENT -------------------------------------------------------------------------------- */
 	#define arc_TRACE_EVENT_SCOPED_NC(...)
@@ -326,6 +339,16 @@ public:
 	void Configure(const char * name_) {}
 	void Plot(int64_t value) {}
 };
+
+	/** -- SOURCE LOCATION UTILS ---------------------------------------------------------------- */
+	#define arc_SOURCE_LOCATION_ARG_0
+	#define arc_SOURCE_LOCATION_ARG_0_DEFAULT
+
+	#define arc_SOURCE_LOCATION_ARG
+	#define arc_SOURCE_LOCATION_ARG_DEFAULT
+
+	#define arc_SOURCE_LOCATION_0
+	#define arc_SOURCE_LOCATION
 
 #endif
 

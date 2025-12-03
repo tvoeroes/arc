@@ -8,6 +8,29 @@
 #include <stdexcept>
 #include <string>
 
+/**
+ * A custom key must be equality comparable and hashable via hash_append().
+ */
+struct Vec3
+{
+	int64_t z = 0;
+	int64_t y = 0;
+	int64_t x = 0;
+
+	friend auto operator<=>(const Vec3 & lhs, const Vec3 & rhs) = default;
+};
+
+namespace arc::extra
+{
+	template <typename Hash>
+	void hash_append(Hash & hash, const Vec3 & value)
+	{
+		hash_append(hash, value.z);
+		hash_append(hash, value.y);
+		hash_append(hash, value.x);
+	}
+}
+
 struct CoroHelloWorld
 {
 	std::string message;
@@ -42,9 +65,9 @@ struct CoroHelloMessage
 
 struct CoroHelloTile
 {
-	const arc::tile & tileId;
+	const Vec3 & tileId;
 
-	static arc::coro<CoroHelloTile> arc_make(arc::context & ctx, const arc::tile & key)
+	static arc::coro<CoroHelloTile> arc_make(arc::context & ctx, const Vec3 & key)
 	{
 		co_return { key };
 	}
@@ -107,7 +130,7 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** the result is available after Wait returns */
 		{
 			REQUIRE(result);
-			CHECK(result->tileId == arc::tile{ 10, 326, 510 });
+			CHECK(result->tileId == Vec3{ 10, 326, 510 });
 		}
 
 		/** release result references */
@@ -116,11 +139,11 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 			CHECK_FALSE(result);
 		}
 
-		arc::future future = ctx(CoroHelloTile::arc_make, arc::tile{ 5, 13, 4 });
+		arc::future future = ctx(CoroHelloTile::arc_make, Vec3{ 5, 13, 4 });
 
 		/** future wait function */
 		result = future.active_wait();
-		CHECK(result->tileId == arc::tile{ 5, 13, 4 });
+		CHECK(result->tileId == Vec3{ 5, 13, 4 });
 	}
 
 	SECTION("poll result")
@@ -557,7 +580,7 @@ TEST_CASE("Coro get_key", "[Coro]")
 	arc::context ctx;
 	arc::result result = ctx(CoroHelloMessage::arc_make, "Hello!").active_wait();
 
-	CHECK(result.get_key<std::string, 0>() == "Hello!");
+	CHECK(result.get_key<std::string, 0>(CoroHelloMessage::arc_make) == "Hello!");
 
 	/**
 	 * NOTE: Undefined behavior, wrong key type
@@ -568,7 +591,7 @@ TEST_CASE("Coro get_key", "[Coro]")
 	arc::result<const char> alias{ &result->message[0], result };
 
 	/** alias results retain the original key */
-	CHECK(alias.get_key<std::string, 0>() == "Hello!");
+	CHECK(alias.get_key<std::string, 0>(CoroHelloMessage::arc_make) == "Hello!");
 }
 
 struct CoroAwaitsAll
@@ -810,4 +833,83 @@ TEST_CASE("Enums Work Coro", "[Coro]")
 	CHECK(*ctx(EnumsWorkCoro1, EnumsWork::B, 5).active_wait());
 	CHECK(*ctx(EnumsWorkCoro2, "dummy", EnumsWork::B).active_wait());
 	CHECK(*ctx(EnumsWorkCoro3, EnumsWork::B, EnumsWork::B).active_wait());
+}
+
+static std::string ManyArguments0(arc::context & ctx) { return ""; }
+
+static std::string ManyArguments1(arc::context & ctx, const std::string & key0) { return key0; }
+
+static std::string ManyArguments2(
+	arc::context & ctx, const std::string & key0, const std::string & key1)
+{
+	return key0 + key1;
+}
+
+static std::string ManyArguments3(
+	arc::context & ctx, const std::string & key0, const std::string & key1,
+	const std::string & key2)
+{
+	return key0 + key1 + key2;
+}
+
+static std::string ManyArguments4(
+	arc::context & ctx, const std::string & key0, const std::string & key1,
+	const std::string & key2, const std::string & key3)
+{
+	return key0 + key1 + key2 + key3;
+}
+
+static std::string ManyArguments5(
+	arc::context & ctx, const std::string & key0, const std::string & key1,
+	const std::string & key2, const std::string & key3, const std::string & key4)
+{
+	return key0 + key1 + key2 + key3 + key4;
+}
+
+static arc::coro<std::string> ManyArguments(
+	arc::context & ctx, const std::string & key0, const std::string & key1,
+	const std::string & key2, const std::string & key3, const std::string & key4)
+{
+	co_return key0 + key1 + key2 + key3 + key4;
+}
+
+TEST_CASE("Many Key Arguments", "[Coro]")
+{
+	arc::context ctx;
+
+	{
+		arc::result result = ctx(ManyArguments0).active_wait();
+		CHECK(result);
+		CHECK(*result == "");
+	}
+
+	{
+		arc::result result = ctx(ManyArguments1, "Hello").active_wait();
+		CHECK(result);
+		CHECK(*result == "Hello");
+	}
+
+	{
+		arc::result result = ctx(ManyArguments2, "Hello", " World!").active_wait();
+		CHECK(result);
+		CHECK(*result == "Hello World!");
+	}
+
+	{
+		arc::result result = ctx(ManyArguments3, "Hello", " ", "World!").active_wait();
+		CHECK(result);
+		CHECK(*result == "Hello World!");
+	}
+
+	{
+		arc::result result = ctx(ManyArguments4, "Hello", " ", "World", "!").active_wait();
+		CHECK(result);
+		CHECK(*result == "Hello World!");
+	}
+
+	{
+		arc::result result = ctx(ManyArguments5, "Hello", " ", "World", "! ", ":)").active_wait();
+		CHECK(result);
+		CHECK(*result == "Hello World! :)");
+	}
 }

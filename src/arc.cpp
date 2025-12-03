@@ -5,6 +5,8 @@
 #include "arc/util/check.hpp"
 #include "arc/util/debug.hpp"
 
+#define arc_SCHEDULER_TRACE_WORKER_LIFETIME 0
+
 namespace
 {
 	template <typename T, typename Q, typename C, typename M>
@@ -47,10 +49,10 @@ namespace
 		typename T::value_type task;
 	};
 
-	template <typename Q, typename G, typename T, typename C, typename M, typename S, typename V>
+	template <typename Q, typename G, typename T, typename C, typename M, typename V>
 	std::optional<WorkPopRes<Q, G, T>> ThreadSafeWorkPop(
 		Q & queue, G & garbage, const size_t & unusedCachesize, T & tasks, V & vector,
-		C & conditionVariable, M & mutex, S & stopToken)
+		C & conditionVariable, M & mutex, const std::stop_token & stopToken)
 	{
 		std::unique_lock lk{ mutex };
 
@@ -100,12 +102,20 @@ namespace
 					},
 				};
 
-				return timerReady ? std::move(vector).front().second : std::move(queue).front();
+				if constexpr (arc::detail::scheduler::ArcSchedulerWorkPool_USING_QUEUE)
+					return timerReady ? std::move(vector).front().second : std::move(queue).front();
+				else
+					return timerReady ? std::move(vector).front().second : std::move(queue).top();
 			}();
 
-			return WorkPopRes<Q, G, T>{ handle,
-										{},
-										handle ? nullptr : arc::extra::queue_pop(tasks) };
+			if constexpr (arc::detail::scheduler::ArcSchedulerWorkPool_USING_QUEUE)
+				return WorkPopRes<Q, G, T>{ handle,
+											{},
+											handle ? nullptr : arc::extra::queue_pop(tasks) };
+			else
+				return WorkPopRes<Q, G, T>{ handle,
+											{},
+											handle ? nullptr : arc::extra::stack_pop(tasks) };
 		}
 		else if (stopRequested)
 		{
@@ -153,7 +163,7 @@ void arc::detail::scheduler::schedule(
 		ThreadSafePush(awaiter, work.work, work.cv, work.mtx);
 }
 
-void arc::detail::scheduler::schedule(std::move_only_function<void()> && task, bool mainThread)
+void arc::detail::scheduler::schedule(arc::function<void()> && task, bool mainThread)
 {
 	arc_CHECK_Precondition(task);
 	ArcSchedulerWorkPool & work = mainThread ? mainThreadWork : workerThreadWork;
@@ -162,7 +172,9 @@ void arc::detail::scheduler::schedule(std::move_only_function<void()> && task, b
 
 void arc::detail::scheduler::worker(std::stop_token stopToken, std::optional<size_t> workerIndex)
 {
+#if arc_SCHEDULER_TRACE_WORKER_LIFETIME
 	arc_TRACE_EVENT_SCOPED(arc_TRACE_CORO);
+#endif
 
 #if arc_TRACE_INSTRUMENTATION_ENABLE
 	if (workerIndex)
@@ -195,7 +207,8 @@ void arc::detail::scheduler::worker(std::stop_token stopToken, std::optional<siz
 		else
 		{
 			arc_CHECK_Assert(task->handle);
-			task->handle->second.ctx.store.release_reference(std::move(task->handle));
+			arc::context & ctx = task->handle->first.get_ctx();
+			ctx.store.release_reference(std::move(task->handle));
 		}
 	}
 }
@@ -289,14 +302,21 @@ void arc::detail::store::release_reference(arc::detail::handle && coroHandle)
 		auto refCount = controlBlock.referenceCount.load(std::memory_order::acquire);
 		if (refCount > 0)
 		{
-			controlBlock.create(storeEntry);
+			theKey.call(storeEntry);
 			return;
 		}
 		else
 		{
-			arc_CHECK_Assert(!(*waiters)->continuations.size() && !(*waiters)->callbacks.size());
+			arc_CHECK_Assert(!(*waiters)->continuations.size());
 		}
 	}
+
+#if 0
+	auto oldRefCount = controlBlock.referenceCount.fetch_sub(1, std::memory_order::acq_rel);
+	arc_CHECK_Assert(oldRefCount > 0);
+	if (oldRefCount > 1)
+		return;
+#endif
 
 	arc_CHECK_Precondition(!controlBlock.promiseBase);
 
@@ -320,8 +340,7 @@ void arc::detail::store::release_reference(arc::detail::handle && coroHandle)
 	}
 }
 
-void arc::detail::store::set_empty_once_callback(
-	std::move_only_function<void()> && emptyOnceCallback)
+void arc::detail::store::set_empty_once_callback(arc::function<void()> && emptyOnceCallback)
 {
 	if (!emptyOnceCallback)
 		return;
@@ -432,26 +451,18 @@ void arc::detail::control_block::remove_reference(arc::detail::handle && coroHan
 		}
 	}
 
+	arc::context & ctx = coroHandle->first.get_ctx();
 	ctx.scheduler.unused(std::move(coroHandle));
 }
 
-bool arc::detail::control_block::try_add_continuation(std::coroutine_handle<> continuation)
+bool arc::detail::control_block::try_add_continuation(arc::function<void()> && continuation)
 {
-	auto comp = waiters.ReadAndWrite();
-	if (!comp->has_value())
-		return false;
-	(*comp)->continuations.push_back(continuation);
-	return true;
-}
-
-bool arc::detail::control_block::try_add_callback(std::move_only_function<void()> && callback)
-{
-	arc_CHECK_Precondition(callback);
+	arc_CHECK_Precondition(continuation);
 
 	auto comp = waiters.ReadAndWrite();
 	if (!comp->has_value())
 		return false;
-	(*comp)->callbacks.emplace_back(std::move(callback));
+	(*comp)->continuations.emplace_back(std::move(continuation));
 	return true;
 }
 
@@ -466,7 +477,7 @@ arc::detail::control_block::~control_block()
 
 arc::detail::promise_base::~promise_base()
 {
-	selfHandle->second.ctx.name_store().set_name(self, nullptr);
+	selfHandle->first.get_ctx().name_store().set_name(self, nullptr);
 	selfHandle->second.promiseBase = nullptr;
 }
 
@@ -483,11 +494,8 @@ void arc::detail::promise_base::conditionally_complete()
 	if (!comp->has_value())
 		return;
 
-	for (std::coroutine_handle<> handle : (*comp)->continuations)
-		selfHandle->second.ctx.schedule_on_worker_thread(handle);
-
-	for (std::move_only_function<void()> & callback : (*comp)->callbacks)
-		callback();
+	for (arc::function<void()> & continuation : (*comp)->continuations)
+		selfHandle->first.get_ctx().schedule_on_worker_thread(std::move(continuation));
 
 	comp->reset();
 }
@@ -516,7 +524,7 @@ void arc::context::schedule_on_worker_thread_after(
 	return scheduler.schedule(handle, timePoint, false);
 }
 
-void arc::context::schedule_on_worker_thread(std::move_only_function<void()> && task)
+void arc::context::schedule_on_worker_thread(arc::function<void()> && task)
 {
 	return scheduler.schedule(std::move(task), false);
 }
@@ -532,35 +540,50 @@ void arc::context::schedule_on_main_thread_after(
 	return scheduler.schedule(handle, timePoint, true);
 }
 
-void arc::context::schedule_on_main_thread(std::move_only_function<void()> && task)
+void arc::context::schedule_on_main_thread(arc::function<void()> && task)
 {
 	return scheduler.schedule(std::move(task), true);
 }
 
-arc::options arc::options::hardware_concurrency()
+template <std::integral T>
+static std::optional<T> from_string(std::string_view str)
 {
-	return {
-		.workerThreadCount = std::max<unsigned int>(std::thread::hardware_concurrency(), 2) - 1,
-		.mainThreadId = std::this_thread::get_id(),
-	};
+	if constexpr (std::is_same_v<T, bool>)
+	{
+		if (str == "true")
+			return true;
+		else if (str == "false")
+			return false;
+		else
+			return std::nullopt;
+	}
+	else
+	{
+		T result = 0;
+		auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), result);
+		if (ptr != (str.data() + str.size()) || ec != std::errc{})
+			return std::nullopt;
+		else
+			return result;
+	}
 }
 
-arc::options arc::options::hardware_concurrency_no_main_thread()
+template <typename T>
+static T getArg(std::string_view arg, std::span<const char *> args, const T & fallback)
 {
-	return {
-		.workerThreadCount = std::max<unsigned int>(std::thread::hardware_concurrency(), 2) - 1,
-	};
+	auto it = std::ranges::find_last(args.begin(), args.end(), arg).begin();
+
+	if (it != args.end() && ++it != args.end())
+	{
+		return from_string<T>(*it).value_or(fallback);
+	}
+	else
+	{
+		return fallback;
+	}
 }
 
-arc::options arc::options::two_threads()
-{
-	return {
-		.workerThreadCount = 1,
-		.mainThreadId = std::this_thread::get_id(),
-	};
-}
-
-std::span<const char * const> arc::options::make_args(int argc, char * argv[])
+static std::span<const char * const> make_args(int argc, char * argv[])
 {
 	if (argc > 0)
 		return { const_cast<const char **>(argv), size_t(argc) };
@@ -568,8 +591,8 @@ std::span<const char * const> arc::options::make_args(int argc, char * argv[])
 		return {};
 }
 
-std::vector<const char *> arc::options::make_args(
-	std::span<const char *> baseArgs, int argc, char * argv[])
+static std::vector<const char *> make_args(
+	std::span<const char * const> baseArgs, int argc, char * argv[])
 {
 	std::vector<const char *> args;
 
@@ -577,13 +600,33 @@ std::vector<const char *> arc::options::make_args(
 
 	args.reserve(cmdArgs.size() + baseArgs.size());
 
-	for (const char * a : cmdArgs)
-		args.emplace_back(a);
+	auto cmdArgsIt = cmdArgs.begin();
+	if (cmdArgsIt != cmdArgs.end())
+		args.emplace_back(*cmdArgsIt++);
 
 	for (const char * a : baseArgs)
 		args.emplace_back(a);
 
+	while (cmdArgsIt != cmdArgs.end())
+		args.emplace_back(*cmdArgsIt++);
+
 	return args;
+}
+
+arc::options arc::options::from_args(
+	std::span<const char * const> baseArgs, int argc, char * argv[])
+{
+	std::vector<const char *> args = make_args(baseArgs, argc, argv);
+
+	const bool withMainThread = getArg<bool>("--withMainThread", args, false);
+	size_t workerThreadCount = getArg(
+		"--workerThreadCount", args,
+		size_t(std::max<unsigned int>(std::thread::hardware_concurrency(), 2)) - 1);
+	return {
+		.workerThreadCount = workerThreadCount,
+		.mainThreadId = withMainThread ? std::this_thread::get_id() : std::thread::id{},
+		.args = std::move(args),
+	};
 }
 
 arc::detail::globals::~globals()
@@ -604,3 +647,60 @@ arc::detail::store::store()
 }
 
 arc::detail::store::~store() { arc_CHECK_Precondition(!data.ReadAndWrite()->store.size()); }
+
+arc::detail::handle arc::detail::store::retrieve_reference(
+	arc::detail::key && key arc_SOURCE_LOCATION_ARG)
+{
+	arc_TRACE_EVENT_SCOPED(arc_TRACE_CORO);
+
+	auto dataHandle = data.ReadAndWrite();
+
+	auto insertion = dataHandle->store.try_emplace(std::move(key));
+	auto it = insertion.first;
+
+	if (insertion.second)
+	{
+		it->first.call(*it);
+	}
+
+#if arc_TRACE_INSTRUMENTATION_ENABLE
+	it->second.requestLocations.emplace_back(arc_SOURCE_LOCATION_0);
+#endif
+
+	return arc::detail::handle{ &*it };
+}
+
+#if arc_TRACE_INSTRUMENTATION_ENABLE
+/** NOTE: there are more new and delete operators that should be replaced */
+
+void * operator new(std::size_t size)
+{
+	arc_TRACE_EVENT_SCOPED(arc_TRACE_MEMORY);
+
+	if (size == 0)
+		size = 1;
+
+	if (void * ptr = std::malloc(size))
+	{
+		TracyAlloc(ptr, size);
+		return ptr;
+	}
+
+	throw std::bad_alloc();
+}
+
+void * operator new[](std::size_t size) { return ::operator new(size); }
+
+void operator delete(void * ptr) noexcept
+{
+	arc_TRACE_EVENT_SCOPED(arc_TRACE_MEMORY);
+
+	TracyFree(ptr);
+	std::free(ptr);
+}
+
+void operator delete[](void * ptr) noexcept { ::operator delete(ptr); }
+void operator delete(void * ptr, std::size_t sz) noexcept { ::operator delete(ptr); }
+void operator delete[](void * ptr, std::size_t sz) noexcept { ::operator delete(ptr); }
+
+#endif

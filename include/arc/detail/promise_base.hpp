@@ -21,8 +21,8 @@ public:
 	void unhandled_exception() noexcept;
 
 protected:
-	template <typename F, size_t keyCount>
-	friend void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry);
+	template <typename F>
+	friend struct arc::detail::key_impl;
 
 protected:
 	promise_base() = default;

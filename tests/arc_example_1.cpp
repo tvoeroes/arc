@@ -13,9 +13,9 @@
 
 struct MyImage
 {
-	const std::vector<uint8_t> image;
+	std::vector<uint8_t> image;
 
-	static arc::coro<MyImage> make(arc::context & ctx, const std::string & key)
+	static arc::coro<const MyImage> make(arc::context & ctx, const std::string & key)
 	{
 		co_return { key };
 	}
@@ -24,15 +24,15 @@ private:
 	MyImage(const std::filesystem::path & path) { /* ... */ }
 };
 
-arc::coro<int> process_images(arc::context & ctx)
+arc::coro<const int> process_images(arc::context & ctx)
 {
-	std::vector<arc::future<MyImage>> futures{
+	std::vector<arc::future<const MyImage>> futures{
 		ctx(MyImage::make, "image1.png"),
 		ctx(MyImage::make, "image2.png"),
 		ctx(MyImage::make, "image3.png"),
 	};
 
-	std::vector loadedImages = co_await arc::all<MyImage>{ ctx, futures };
+	std::vector loadedImages = co_await arc::all<const MyImage>{ ctx, futures };
 
 	/* ... */
 

@@ -3,26 +3,62 @@
 #include "arc/util/tracing.hpp"
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(F * f)
+arc::future<arc::result_of_t<F>> arc::context::operator()(F * f arc_SOURCE_LOCATION_ARG)
 {
 	static_assert(arc::key_count_of_v<F> == 0);
-	return store.retrieve_reference(*this, f, arc::detail::key::make(f));
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this } arc_SOURCE_LOCATION) };
 }
 
 template <typename F>
-inline arc::future<arc::result_of_t<F>> arc::context::operator()(F * f, arc::key_of_t<F, 0> key0)
+inline arc::future<arc::result_of_t<F>> arc::context::operator()(
+	F * f, arc::key_of_t<F, 0> key0 arc_SOURCE_LOCATION_ARG)
 {
 	static_assert(arc::key_count_of_v<F> == 1);
-	return store.retrieve_reference(*this, f, arc::detail::key::make(f, std::move(key0)));
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this, std::move(key0) } arc_SOURCE_LOCATION) };
 }
 
 template <typename F>
 arc::future<arc::result_of_t<F>> arc::context::operator()(
-	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1)
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1 arc_SOURCE_LOCATION_ARG)
 {
 	static_assert(arc::key_count_of_v<F> == 2);
-	return store.retrieve_reference(
-		*this, f, arc::detail::key::make(f, std::move(key0), std::move(key1)));
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1) } arc_SOURCE_LOCATION) };
+}
+
+template <typename F>
+arc::future<arc::result_of_t<F>> arc::context::operator()(
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1,
+	arc::key_of_t<F, 2> key2 arc_SOURCE_LOCATION_ARG)
+{
+	static_assert(arc::key_count_of_v<F> == 3);
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1),
+						  std::move(key2) } arc_SOURCE_LOCATION) };
+}
+
+template <typename F>
+arc::future<arc::result_of_t<F>> arc::context::operator()(
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
+	arc::key_of_t<F, 3> key3 arc_SOURCE_LOCATION_ARG)
+{
+	static_assert(arc::key_count_of_v<F> == 4);
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1), std::move(key2),
+						  std::move(key3) } arc_SOURCE_LOCATION) };
+}
+
+template <typename F>
+arc::future<arc::result_of_t<F>> arc::context::operator()(
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
+	arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4 arc_SOURCE_LOCATION_ARG)
+{
+	static_assert(arc::key_count_of_v<F> == 5);
+	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1), std::move(key2),
+						  std::move(key3), std::move(key4) } arc_SOURCE_LOCATION) };
 }
 
 inline auto arc::context::schedule_on_worker_thread()
@@ -124,7 +160,7 @@ struct arc::future<T>::impl
 		{
 			arc_CHECK_Precondition(!other.resolve);
 
-			return resolve_inheritance<U, std::is_const_v<U>>;
+			return resolve_inheritance<U, std::is_const_v<T>>;
 		}
 	}
 
@@ -167,9 +203,10 @@ struct arc::future<T>::impl
 	}
 
 	template <typename U, bool C>
-	static T * resolve_inheritance(std::conditional_t<C, const void, void> * p)
+	static std::conditional_t<C, std::add_const_t<T>, T> * resolve_inheritance(
+		std::conditional_t<C, const void, void> * p)
 	{
-		return static_cast<T *>(static_cast<U *>(p));
+		return static_cast<T *>(static_cast<std::conditional_t<C, std::add_const_t<U>, U> *>(p));
 	}
 
 	template <typename U, typename V, U V::* M, bool C>
@@ -293,17 +330,17 @@ inline arc::future<T>::operator bool() const noexcept
 }
 
 template <typename T>
-inline void arc::future<T>::async_wait_and_then(std::move_only_function<void()> && callback) const
+inline void arc::future<T>::async_wait_and_then(arc::function<void()> && callback) const
 {
 	arc_CHECK_Precondition(handle);
 
-	if (bool added = handle->second.try_add_callback(std::move(callback)); !added)
+	if (bool added = handle->second.try_add_continuation(std::move(callback)); !added)
 		callback();
 }
 
 template <typename T>
 inline void arc::future<T>::async_wait_and_then(
-	std::move_only_function<void(arc::result<T>)> && callback) const
+	arc::function<void(arc::result<T>)> && callback) const
 {
 	async_wait_and_then([c = std::move(callback), a = *this]() mutable { c(impl::get_result(a)); });
 }
@@ -319,7 +356,7 @@ inline arc::result<T> arc::future<T>::active_wait()
 
 	async_wait_and_then([&stopSource] { stopSource.request_stop(); });
 
-	handle->second.ctx.scheduler.assist(stopSource.get_token());
+	handle->first.get_ctx().scheduler.assist(stopSource.get_token());
 
 	return impl::get_result(*this);
 }
@@ -542,11 +579,11 @@ inline arc::result<T>::operator bool() const noexcept
 }
 
 template <typename T>
-template <typename K, size_t I>
-inline const K & arc::result<T>::get_key() const
+template <typename K, size_t I, typename F>
+inline const K & arc::result<T>::get_key(F * f) const
 {
 	arc_CHECK_Precondition(handle);
-	return handle->first.get_key<K, I>();
+	return handle->first.get_key<K, I>(f);
 }
 
 template <typename T>
@@ -557,72 +594,29 @@ inline arc::result<T>::result(std::nullptr_t)
 	: result{}
 {}
 
-template <typename F, size_t keyCount>
-void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
+template <typename F>
+void arc::detail::key_impl<F>::call(arc::detail::store_entry & storeEntry) const
 {
-	const arc::detail::key & key = storeEntry.first;
+	arc::context & ctx = get_ctx();
+
 	arc::detail::control_block & controlBlock = storeEntry.second;
 
 	std::coroutine_handle<arc::detail::promise<arc::result_of_t<F>>> handle = [&] {
-		static_assert(keyCount >= 0 && keyCount <= 2);
-
 		static constexpr bool isAlreadyCoro = arc::detail::is_coro_v<
 			typename arc::detail::reflect_function<std::remove_cvref_t<F>>::return_type>;
 
-		if constexpr (keyCount == 0)
+		if constexpr (isAlreadyCoro)
 		{
-			if constexpr (isAlreadyCoro)
-			{
-				return key.get_function<F>()(controlBlock.ctx);
-			}
-			else
-			{
-				auto wrapper = [](F f, arc::context & ctx) -> arc::coro<arc::result_of_t<F>> {
-					/** */
-					co_return f(ctx);
-				};
-				return wrapper(key.get_function<F>(), controlBlock.ctx);
-			}
+			return std::apply(*function_, arguments_);
 		}
-		else if constexpr (keyCount == 1)
+		else
 		{
-			using key_type_0 = arc::key_of_t<F, 0>;
+			auto wrapper =
+				[](const arc::detail::key_impl<F> * self) -> arc::coro<arc::result_of_t<F>> {
+				co_return std::apply(*self->function_, self->arguments_);
+			};
 
-			if constexpr (isAlreadyCoro)
-			{
-				return key.get_function<F>()(controlBlock.ctx, key.get_key<key_type_0, 0>());
-			}
-			else
-			{
-				auto wrapper = [](F f, arc::context & ctx,
-								  const key_type_0 & key0) -> arc::coro<arc::result_of_t<F>> {
-					/** */
-					co_return f(ctx, key0);
-				};
-				return wrapper(key.get_function<F>(), controlBlock.ctx, key.get_key<key_type_0>());
-			}
-		}
-		else if constexpr (keyCount == 2)
-		{
-			using key_type_0 = arc::key_of_t<F, 0>;
-			using key_type_1 = arc::key_of_t<F, 1>;
-
-			if constexpr (isAlreadyCoro)
-			{
-				return key.get_function<F>()(
-					controlBlock.ctx, key.get_key<key_type_0, 0>(), key.get_key<key_type_1, 1>());
-			}
-			else
-			{
-				auto wrapper = [](F f, arc::context & ctx, const key_type_0 & key0,
-								  const key_type_1 & key1) -> arc::coro<arc::result_of_t<F>> {
-					/** */
-					co_return f(ctx, key0, key1);
-				};
-				return wrapper(
-					key.get_function<F>(), controlBlock.ctx, key.get_key<key_type_0>(),
-					key.get_key<key_type_1>());
-			}
+			return wrapper(this);
 		}
 	}();
 
@@ -635,28 +629,10 @@ void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry)
 	controlBlock.promiseBase->set_self_handle(arc::detail::handle{ &storeEntry });
 
 #ifdef arc_TRACE_INSTRUMENTATION_ENABLE
-	controlBlock.ctx.names.set_name(handle, controlBlock.promiseBase->name);
+	ctx.names.set_name(handle, controlBlock.promiseBase->name);
 #endif
 
-	controlBlock.ctx.schedule_on_worker_thread(controlBlock.promiseBase->self);
-}
-
-template <typename F>
-arc::future<arc::result_of_t<F>> arc::detail::store::retrieve_reference(
-	arc::context & ctx, F * f, arc::detail::key && key)
-{
-	arc_TRACE_EVENT_SCOPED(arc_TRACE_CORO);
-
-	auto dataHandle = data.ReadAndWrite();
-
-	auto insertion =
-		dataHandle->store.try_emplace(std::move(key), ctx, arc::detail::create_shared_task<F>);
-	auto it = insertion.first;
-
-	if (insertion.second)
-		it->second.create(*it);
-
-	return arc::future<arc::result_of_t<F>>{ arc::detail::handle{ &*it } };
+	ctx.schedule_on_worker_thread(controlBlock.promiseBase->self);
 }
 
 template <typename T>

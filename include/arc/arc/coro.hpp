@@ -30,8 +30,8 @@ private:
 		return std::exchange(handle, nullptr);
 	}
 
-	template <typename F, size_t keyCount>
-	friend void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry);
+	template <typename F>
+	friend struct arc::detail::key_impl;
 
 private:
 	handle_type handle;

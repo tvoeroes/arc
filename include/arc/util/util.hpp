@@ -54,4 +54,20 @@ namespace arc::util
 	{
 		return const_cast<const_removed_t<T> *>(ptr);
 	}
+
+	template <typename Tuple>
+	struct remove_tuple_const_reference;
+
+	template <typename... Args>
+	struct remove_tuple_const_reference<std::tuple<arc::context &, Args...>>
+	{
+		using type =
+			std::tuple<arc::context &, std::remove_const_t<std::remove_reference_t<Args>>...>;
+	};
+
+	template <typename Tuple>
+	using remove_tuple_const_reference_t = typename remove_tuple_const_reference<Tuple>::type;
+
+	template <typename T>
+	concept scoped_enum = std::is_scoped_enum_v<T>;
 }

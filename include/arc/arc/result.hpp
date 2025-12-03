@@ -78,8 +78,8 @@ public:
 	 * object then the behavior is undefined. Note that
 	 * arc::key_of_t<F, I> is not necessarily the correct type.
 	 */
-	template <typename K, size_t I>
-	const K & get_key() const;
+	template <typename K, size_t I, typename F>
+	const K & get_key(F * f) const;
 
 private:
 	template <typename U>

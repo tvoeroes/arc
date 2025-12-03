@@ -1,5 +1,7 @@
 #pragma once
 
+#include "arc/util/tracing.hpp"
+
 #include <mutex>
 #include <shared_mutex>
 #include <type_traits>
@@ -82,12 +84,20 @@ private:
 	mutable mutex_type mutex;
 };
 
+#define arc_TRACE_RECURSIVE_GUARD 0
+
 template <typename T>
 struct arc::extra::recursive_guard
 {
-public:
+private:
 	using mutex_type = std::recursive_mutex;
+#if arc_TRACE_RECURSIVE_GUARD
+	using actual_mutex_type = arc_TRACE_LOCKABLE_SHARED_TYPE(mutex_type);
+#else
+	using actual_mutex_type = mutex_type;
+#endif
 
+public:
 	recursive_guard() = default;
 
 	template <typename... Args>
@@ -95,8 +105,10 @@ public:
 		: val{ std::forward<Args>(args)... }
 	{}
 
-	using iterator_type = arc::extra::detail::guard_lock_pointer<T, mutex_type, false, false>;
-	using iterator_const_type = arc::extra::detail::guard_lock_pointer<T, mutex_type, true, false>;
+	using iterator_type =
+		arc::extra::detail::guard_lock_pointer<T, actual_mutex_type, false, false>;
+	using iterator_const_type =
+		arc::extra::detail::guard_lock_pointer<T, actual_mutex_type, true, false>;
 
 	iterator_type ReadAndWrite() { return { &val, mutex }; }
 
@@ -108,5 +120,9 @@ public:
 
 private:
 	T val;
+#if arc_TRACE_RECURSIVE_GUARD
+	mutable arc_TRACE_LOCKABLE_SHARED(mutex_type, mutex, "recursive_guard");
+#else
 	mutable mutex_type mutex;
+#endif
 };

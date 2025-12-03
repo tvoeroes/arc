@@ -5,6 +5,7 @@
 #include "arc/detail/key.hpp"
 #include "arc/fwd.hpp"
 #include "arc/util/std.hpp"
+#include "arc/util/tracing.hpp"
 
 struct arc::detail::store
 {
@@ -12,19 +13,17 @@ public:
 	store();
 	~store();
 
-	template <typename F>
-	arc::future<arc::result_of_t<F>> retrieve_reference(
-		arc::context & ctx, F * f, arc::detail::key && key);
+	arc::detail::handle retrieve_reference(arc::detail::key && key arc_SOURCE_LOCATION_ARG);
 
 	void release_reference(arc::detail::handle && coroHandle);
 
-	void set_empty_once_callback(std::move_only_function<void()> && emptyOnceCallback);
+	void set_empty_once_callback(arc::function<void()> && emptyOnceCallback);
 
 private:
 	struct Data
 	{
 		arc_TRACE_CONTAINER_UNORDERED_MAP(arc::detail::key, arc::detail::control_block) store;
-		std::queue<std::move_only_function<void()>> emptyOnceCallbacks;
+		std::queue<arc::function<void()>> emptyOnceCallbacks;
 	};
 
 	static_assert(std::is_same_v<arc::detail::store_entry, decltype(Data{}.store)::value_type>);

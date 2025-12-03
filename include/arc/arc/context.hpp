@@ -23,13 +23,13 @@ public:
 
 	auto schedule_on_worker_thread();
 	void schedule_on_worker_thread(std::coroutine_handle<> handle);
-	void schedule_on_worker_thread(std::move_only_function<void()> && task);
+	void schedule_on_worker_thread(arc::function<void()> && task);
 	auto schedule_on_worker_thread_after(arc::time_point timePoint);
 	void schedule_on_worker_thread_after(std::coroutine_handle<> handle, arc::time_point timePoint);
 
 	auto schedule_on_main_thread();
 	void schedule_on_main_thread(std::coroutine_handle<> handle);
-	void schedule_on_main_thread(std::move_only_function<void()> && task);
+	void schedule_on_main_thread(arc::function<void()> && task);
 	auto schedule_on_main_thread_after(arc::time_point timePoint);
 	void schedule_on_main_thread_after(std::coroutine_handle<> handle, arc::time_point timePoint);
 
@@ -52,20 +52,41 @@ public:
 	arc::detail::name_store & name_store();
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(F * f);
-
-	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(F * f, arc::key_of_t<F, 0> key0);
+	arc::future<arc::result_of_t<F>> operator()(F * f arc_SOURCE_LOCATION_ARG_DEFAULT);
 
 	template <typename F>
 	arc::future<arc::result_of_t<F>> operator()(
-		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1);
+		F * f, arc::key_of_t<F, 0> key0 arc_SOURCE_LOCATION_ARG_DEFAULT);
+
+	template <typename F>
+	arc::future<arc::result_of_t<F>> operator()(
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1 arc_SOURCE_LOCATION_ARG_DEFAULT);
+
+	template <typename F>
+	arc::future<arc::result_of_t<F>> operator()(
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1,
+		arc::key_of_t<F, 2> key2 arc_SOURCE_LOCATION_ARG_DEFAULT);
+
+	template <typename F>
+	arc::future<arc::result_of_t<F>> operator()(
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
+		arc::key_of_t<F, 3> key3 arc_SOURCE_LOCATION_ARG_DEFAULT);
+
+	template <typename F>
+	arc::future<arc::result_of_t<F>> operator()(
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
+		arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4 arc_SOURCE_LOCATION_ARG_DEFAULT);
+
+	friend bool operator==(const context & lhs, const context & rhs) noexcept
+	{
+		return &lhs == &rhs;
+	}
 
 private:
 	friend arc::detail::scheduler;
 
-	template <typename F, size_t keyCount>
-	friend void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry);
+	template <typename F>
+	friend struct arc::detail::key_impl;
 
 	friend arc::detail::control_block;
 
@@ -85,3 +106,12 @@ private:
 	/** NOTE: arc::detail::globals must be destroyed even before arc::detail::scheduler. */
 	arc::detail::globals globals;
 };
+
+namespace arc::extra
+{
+	template <typename Hash>
+	void hash_append(Hash & hash, const arc::context & value)
+	{
+		hash_append(hash, reinterpret_cast<uintptr_t>(&value));
+	}
+}

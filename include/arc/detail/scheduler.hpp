@@ -4,6 +4,8 @@
 #include "arc/fwd.hpp"
 #include "arc/util/std.hpp"
 
+#define arc_SCHEDULER_TRACE_LOCK 0
+
 struct arc::detail::scheduler : private arc::extra::non_copyable_non_movable
 {
 private:
@@ -52,9 +54,11 @@ public:
 		std::coroutine_handle<> awaiter, const std::optional<arc::time_point> & timePoint,
 		bool mainThread);
 
-	void schedule(std::move_only_function<void()> && task, bool mainThread);
+	void schedule(arc::function<void()> && task, bool mainThread);
 
 	void unused(arc::detail::handle && handle);
+
+	static constexpr bool ArcSchedulerWorkPool_USING_QUEUE = false;
 
 private:
 	void worker(std::stop_token stopToken, std::optional<size_t> workerIndex);
@@ -65,14 +69,19 @@ private:
 private:
 	struct ArcSchedulerWorkPool
 	{
+#if arc_SCHEDULER_TRACE_LOCK
 		arc_TRACE_CONDITION_VARIABLE_ANY cv;
 		arc_TRACE_LOCKABLE(std::mutex, mtx, "ArcSchedulerWorkPoolMtx");
-		arc_TRACE_CONTAINER_QUEUE(std::coroutine_handle<>) work;
+#else
+		std::condition_variable_any cv;
+		std::mutex mtx;
+#endif
+		arc_TRACE_CONTAINER_STACK(std::coroutine_handle<>) work;
 		std::vector<std::pair<arc::time_point, std::coroutine_handle<>>> timers;
 
 		size_t unusedCachesize = 0;
 		arc_TRACE_CONTAINER_QUEUE(arc::detail::handle) potentiallyUnused;
-		arc_TRACE_CONTAINER_QUEUE(std::move_only_function<void()>) tasks;
+		arc_TRACE_CONTAINER_STACK(arc::function<void()>) tasks;
 	};
 
 private:

@@ -7,16 +7,17 @@
 #include "arc/util/std.hpp"
 #include "arc/util/util.hpp"
 
+#if arc_TRACE_INSTRUMENTATION_ENABLE
+	#include <source_location>
+#endif
+
 /**
  * NOTE: This class uses the scary raw new+delete.
  */
 struct arc::detail::control_block : private arc::extra::non_copyable_non_movable
 {
 public:
-	control_block(arc::context & ctx, void (*create)(arc::detail::store_entry &))
-		: ctx{ ctx }
-		, create{ create }
-	{}
+	control_block() = default;
 
 	template <typename T, typename... Args>
 	T * construct(Args &&... args)
@@ -64,8 +65,8 @@ private:
 	friend arc::detail::promise_base;
 	friend arc::detail::scheduler;
 
-	template <typename F, size_t keyCount>
-	friend void arc::detail::create_shared_task(arc::detail::store_entry & storeEntry);
+	template <typename F>
+	friend struct arc::detail::key_impl;
 
 private:
 	void add_reference() noexcept;
@@ -74,29 +75,19 @@ private:
 	bool is_done() const { return !waiters.ReadOnly()->has_value(); }
 
 	/**
-	 * \returns true if the coroutine was scheduled as continuation. False means that the window for
-	 *          signaling continuations has passed and that the coroutine can be resumed
-	 *          immediately.
-	 */
-	bool try_add_continuation(std::coroutine_handle<> continuation);
-
-	/**
-	 * \returns true if the callback was scheduled. False means that the window
-	 *          for signaling continuations has passed and that the callback
+	 * \returns true if the continuation was scheduled. False means that the window
+	 *          for signaling continuations has passed and that the continuation
 	 *          should be handled by the caller of this function instead.
 	 */
-	bool try_add_callback(std::move_only_function<void()> && callback);
+	bool try_add_continuation(arc::function<void()> && continuation);
 
 private:
 	struct Waiters
 	{
-		std::vector<std::coroutine_handle<>> continuations;
-		std::vector<std::move_only_function<void()>> callbacks;
+		std::vector<arc::function<void()>> continuations;
 	};
 
 private:
-	arc::context & ctx;
-
 	std::atomic_size_t referenceCount{ 0 };
 
 	arc::detail::promise_base * promiseBase = nullptr;
@@ -106,7 +97,12 @@ private:
 	std::exception_ptr exception;
 
 	void (*deleter)(void *) = nullptr;
-	void (*create)(arc::detail::store_entry &) = nullptr;
 
 	arc::extra::shared_guard<std::optional<Waiters>> waiters{ std::in_place };
+#if arc_TRACE_INSTRUMENTATION_ENABLE
+	/**
+	 * HACK: this guarded by dataHandle lock
+	 */
+	std::vector<std::source_location> requestLocations;
+#endif
 };

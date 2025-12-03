@@ -4,8 +4,9 @@ set(CMAKE_CXX_STANDARD 23)
 
 project(arc VERSION 0.0.0)
 
-option(ARC_BUILD_TEST_PROGRAMS "Build the Arc test programs" ON)
-option(ARC_WITH_TRACING "Enable Arc tracing" ON)
+option(ARC_BUILD_TEST_PROGRAMS "Build the Arc test programs" OFF)
+option(ARC_WITH_CATCH2 "Build test programs with Catch2" OFF)
+option(ARC_WITH_TRACY "Enable Arc tracing" OFF)
 
 add_library(arc)
 
@@ -24,7 +25,6 @@ target_sources(arc
 		include/arc/arc/options.hpp
 		include/arc/arc/promise_proxy.hpp
 		include/arc/arc/result.hpp
-		include/arc/arc/tile.hpp
 		include/arc/detail/control_block.hpp
 		include/arc/detail/handle.hpp
 		include/arc/detail/key.hpp
@@ -50,7 +50,8 @@ target_sources(arc
 		src/arc.cpp
 )
 
-if(ARC_WITH_TRACING AND Tracy_FOUND)
+if(ARC_WITH_TRACY)
+	find_package(Tracy REQUIRED)
 	target_link_libraries(arc PUBLIC Tracy::TracyClient)
 endif()
 
@@ -62,7 +63,8 @@ if(ARC_BUILD_TEST_PROGRAMS)
 
 	target_link_libraries(arc_api_test PRIVATE arc)
 
-	if(Catch2_FOUND)
+	if(ARC_WITH_CATCH2)
+		find_package(Catch2 REQUIRED)
 		target_link_libraries(arc_api_test PRIVATE Catch2::Catch2WithMain)
 		catch_discover_tests(arc_api_test)
 	endif()
