@@ -1,92 +1,111 @@
 #pragma once
 
 #include "arc/arc/key_of.hpp"
-#include "arc/fwd.hpp"
+#include "arc/util/algorithms.hpp"
 #include "arc/util/check.hpp"
-#include "arc/util/std.hpp"
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <stdexcept>
+#include <tuple>
+#include <utility>
+
+namespace arc
+{
+	using hash_algorithm = util::FNV_1a_64;
+}
 
 namespace arc::detail
 {
-	template <typename F>
-	using args_tuple_t = arc::util::remove_tuple_const_reference_t<
-		typename arc::detail::reflect_function<std::remove_cvref_t<F>>::argument_tuple>;
+	struct control_block;
+	struct key;
+	using store_entry = std::pair<const key, control_block>;
 
 	using function_untyped_t = void (*)();
 
-	struct key_impl_base
-	{
-		virtual bool operator==(const key_impl_base &) const = 0;
-		virtual function_untyped_t get_function_untyped() const = 0;
-		virtual const void * get_arguments_untyped() const = 0;
-		virtual size_t hash_value() const = 0;
-		virtual void call(arc::detail::store_entry & storeEntry) const = 0;
-		virtual arc::context & get_ctx() const = 0;
-		virtual ~key_impl_base() = default;
-	};
+	struct key_impl_base;
 
 	template <typename F>
-	struct key_impl final : key_impl_base
-	{
-	public:
-		template <typename... Args>
-		key_impl(F * function, Args &&... arguments)
-			: function_{ function }
-			, arguments_{ std::forward<Args>(arguments)... }
-		{
-			{
-				arc::extra::HashAlgorithm hash;
+	struct key_impl;
 
-				/**
-				 * NOTE: This requires a compiler-specific extension: function-pointer
-				 *       (with unspecified value due to the cast) to uintptr_t cast.
-				 * NOTE: Hash value for a type may be different on each application
-				 *       start because of address space layout randomization.
-				 */
-				hash_append(hash, reinterpret_cast<uintptr_t>(get_function_untyped()));
-
-				hash_append(hash, arguments_);
-
-				hash_value_ = hash.result();
-			}
-		}
-
-		bool operator==(const key_impl_base & other) const override
-		{
-			/**
-			 * NOTE: This requires a compiler-specific behavior: comparison of function
-			 *       pointers whose value is unspecified due to the cast.
-			 */
-			if (get_function_untyped() != other.get_function_untyped())
-			{
-				return false;
-			}
-			else
-			{
-				const auto & otherArguments =
-					*static_cast<const args_tuple_t<F> *>(other.get_arguments_untyped());
-				return arguments_ == otherArguments;
-			}
-		}
-
-		function_untyped_t get_function_untyped() const override
-		{
-			return reinterpret_cast<function_untyped_t>(function_);
-		}
-
-		const void * get_arguments_untyped() const override { return &arguments_; }
-
-		size_t hash_value() const override { return hash_value_; }
-
-		void call(arc::detail::store_entry & storeEntry) const override;
-
-		arc::context & get_ctx() const override { return std::get<0>(arguments_); }
-
-	private:
-		F * function_ = nullptr;
-		args_tuple_t<F> arguments_;
-		uint64_t hash_value_ = 0;
-	};
+	struct key;
 }
+
+struct arc::detail::key_impl_base
+{
+public:
+	virtual bool operator==(const key_impl_base &) const = 0;
+	virtual function_untyped_t get_function_untyped() const = 0;
+	virtual const void * get_arguments_untyped() const = 0;
+	virtual size_t hash_value() const = 0;
+	virtual void call(arc::detail::store_entry & storeEntry) const = 0;
+	virtual arc::context & get_ctx() const = 0;
+	virtual ~key_impl_base() = default;
+};
+
+template <typename F>
+struct arc::detail::key_impl final : arc::detail::key_impl_base
+{
+public:
+	template <typename... Args>
+	key_impl(F * function, Args &&... arguments)
+		: function_{ function }
+		, arguments_{ std::forward<Args>(arguments)... }
+	{
+		{
+			arc::hash_algorithm hash;
+
+			/**
+			 * NOTE: This requires a compiler-specific extension: function-pointer
+			 *       (with unspecified value due to the cast) to uintptr_t cast.
+			 * NOTE: Hash value for a type may be different on each application
+			 *       start because of address space layout randomization.
+			 */
+			hash_append(hash, reinterpret_cast<uintptr_t>(get_function_untyped()));
+
+			hash_append(hash, arguments_);
+
+			hash_value_ = hash.result();
+		}
+	}
+
+	bool operator==(const key_impl_base & other) const override
+	{
+		/**
+		 * NOTE: This requires a compiler-specific behavior: comparison of function
+		 *       pointers whose value is unspecified due to the cast.
+		 */
+		if (get_function_untyped() != other.get_function_untyped())
+		{
+			return false;
+		}
+		else
+		{
+			const auto & otherArguments =
+				*static_cast<const args_tuple_t<F> *>(other.get_arguments_untyped());
+			return arguments_ == otherArguments;
+		}
+	}
+
+	function_untyped_t get_function_untyped() const override
+	{
+		return reinterpret_cast<function_untyped_t>(function_);
+	}
+
+	const void * get_arguments_untyped() const override { return &arguments_; }
+
+	size_t hash_value() const override { return hash_value_; }
+
+	void call(arc::detail::store_entry & storeEntry) const override;
+
+	arc::context & get_ctx() const override { return std::get<0>(arguments_); }
+
+private:
+	F * function_ = nullptr;
+	args_tuple_t<F> arguments_;
+	uint64_t hash_value_ = 0;
+};
 
 struct arc::detail::key
 {

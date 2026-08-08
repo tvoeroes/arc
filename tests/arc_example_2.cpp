@@ -1,36 +1,27 @@
 #include "arc/arc.hpp"
 
-#include <iostream>
+#include <print>
 #include <string>
 
-struct MyString
+static arc::coro<const std::string * const> make_my_string(
+	arc::context & ctx, const std::string & key)
 {
-	const std::string & value;
+	co_return { &key };
+}
 
-	static arc::coro<MyString> arc_make(arc::context & ctx, const std::string & key)
-	{
-		co_return { key };
-	}
-};
-
-struct MyHelloWorld
+static arc::coro<const std::string> make_my_hello_world(arc::context & ctx)
 {
-	std::string value;
+	arc::result hello = co_await ctx[make_my_string, "Hello, "];
+	arc::result world = co_await ctx[make_my_string, "World!"];
 
-	static arc::coro<MyHelloWorld> arc_make(arc::context & ctx)
-	{
-		arc::result hello = co_await ctx(MyString::arc_make, "Hello, ");
-		arc::result world = co_await ctx(MyString::arc_make, "World!");
-
-		co_return { hello->value + world->value };
-	}
-};
+	co_return { **hello + **world };
+}
 
 int main()
 {
 	arc::context ctx;
-	arc::future future = ctx(MyHelloWorld::arc_make);
+	arc::future future = ctx[make_my_hello_world];
 	arc::result result = future.active_wait();
 
-	std::cout << result->value << std::endl;
+	std::println("{}", *result);
 }

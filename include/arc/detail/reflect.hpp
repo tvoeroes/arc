@@ -1,6 +1,16 @@
 #pragma once
 
+#include <stddef.h>
 #include <tuple>
+
+namespace arc::detail
+{
+	template <typename>
+	struct reflect_function;
+
+	template <auto>
+	struct reflect_pointer_to_member;
+}
 
 template <typename Return, typename... Args>
 struct arc::detail::reflect_function<Return(Args...)>

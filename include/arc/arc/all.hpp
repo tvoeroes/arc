@@ -1,10 +1,19 @@
 #pragma once
 
 #include "arc/arc/context.hpp"
-#include "arc/extra/algorithms.hpp"
-#include "arc/fwd.hpp"
+#include "arc/util/algorithms.hpp"
 #include "arc/util/check.hpp"
-#include "arc/util/std.hpp"
+
+#include <atomic>
+#include <coroutine>
+#include <span>
+#include <vector>
+
+namespace arc
+{
+	template <typename T>
+	struct all;
+}
 
 template <typename T>
 struct arc::all
@@ -49,13 +58,10 @@ public:
 	}
 
 private:
-	arc::context & ctx;
-	std::span<arc::future<T>> futures;
-	std::vector<arc::result<T>> results;
-	std::atomic_size_t doneCount = 0;
-	std::coroutine_handle<> awaiter;
-
-	bool ready() const { return doneCount.load(std::memory_order::acquire) == results.size() + 1; }
+	bool ready() const
+	{
+		return doneCount.load(std::memory_order::acquire) == results.size() + 1;
+	}
 
 	void complete_one()
 	{
@@ -66,4 +72,11 @@ private:
 
 		ctx.schedule_on_worker_thread(awaiter);
 	}
+
+private:
+	arc::context & ctx;
+	std::span<arc::future<T>> futures;
+	std::vector<arc::result<T>> results;
+	std::atomic_size_t doneCount = 0;
+	std::coroutine_handle<> awaiter;
 };

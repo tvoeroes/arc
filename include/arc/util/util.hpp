@@ -1,10 +1,28 @@
 #pragma once
 
-#include "arc/fwd.hpp"
-
+#include <chrono>
+#include <functional>
 #include <optional>
 #include <tuple>
 #include <type_traits>
+#include <variant>
+
+namespace arc
+{
+	struct context;
+
+	template <typename... Signature>
+#if __cpp_lib_move_only_function >= 202110L
+	using function = std::move_only_function<Signature...>;
+	#define arc_FUNCTION_IS_MOVE_ONLY 1
+#else
+	using function = std::function<Signature...>;
+	#define arc_FUNCTION_IS_MOVE_ONLY 0
+#endif
+
+	using clock = std::chrono::steady_clock;
+	using time_point = clock::time_point;
+}
 
 namespace arc::util
 {
@@ -47,13 +65,8 @@ namespace arc::util
 	using const_removed_t = std::conditional_t<std::is_const_v<T>, std::remove_const_t<T>, T>;
 
 	template <typename T>
-	using const_matching_void_t = std::conditional_t<std::is_const_v<T>, const void, void>;
-
-	template <typename T>
-	const_removed_t<T> * remove_const(std::type_identity_t<T> * ptr)
-	{
-		return const_cast<const_removed_t<T> *>(ptr);
-	}
+	using const_matching_void_t =
+		std::conditional_t<std::is_const_v<std::remove_reference_t<T>>, const void, void>;
 
 	template <typename Tuple>
 	struct remove_tuple_const_reference;
@@ -70,4 +83,18 @@ namespace arc::util
 
 	template <typename T>
 	concept scoped_enum = std::is_scoped_enum_v<T>;
+
+	template <typename... Args>
+	struct visit_overloads : Args...
+	{
+		using Args::operator()...;
+	};
+
+	template <typename... Visitors>
+	inline auto visit(auto && value, Visitors &&... visitors)
+	{
+		return std::visit(
+			visit_overloads<Visitors...>{ std::forward<Visitors>(visitors)... },
+			std::forward<decltype(value)>(value));
+	}
 }

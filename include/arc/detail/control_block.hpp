@@ -1,60 +1,42 @@
 #pragma once
 
-#include "arc/extra/guard.hpp"
-#include "arc/extra/non_copyable_non_movable.hpp"
-#include "arc/fwd.hpp"
+#include "arc/arc/future.hpp"
+#include "arc/detail/coro_promise_base.hpp"
+#include "arc/detail/handle.hpp"
+#include "arc/detail/result_store.hpp"
+#include "arc/detail/zone_info.hpp"
 #include "arc/util/check.hpp"
-#include "arc/util/std.hpp"
+#include "arc/util/debug.hpp"
+#include "arc/util/guard.hpp"
+#include "arc/util/non_copyable_non_movable.hpp"
 #include "arc/util/util.hpp"
+
+#include <atomic>
+#include <optional>
+#include <vector>
 
 #if arc_TRACE_INSTRUMENTATION_ENABLE
 	#include <source_location>
 #endif
 
-/**
- * NOTE: This class uses the scary raw new+delete.
- */
-struct arc::detail::control_block : private arc::extra::non_copyable_non_movable
+namespace arc::detail
+{
+	/**
+	 * NOTE: This class uses the scary raw new+delete.
+	 */
+	struct control_block;
+}
+
+struct arc::detail::control_block
 {
 public:
+	arc_NON_COPYABLE_NON_MOVABLE(control_block);
+
 	control_block() = default;
 
-	template <typename T, typename... Args>
-	T * construct(Args &&... args)
-	{
-		arc_CHECK_Precondition(!value);
-		T * result = new T{ std::forward<Args>(args)... };
-		DEBUG_valueIsConst = std::is_const_v<T>;
-		value = arc::util::remove_const<T>(result);
-		deleter = [](void * value) { delete reinterpret_cast<T *>(value); };
-		return result;
-	}
-
-	/**
-	 * \tparam T If construct<T, ...>() was already called then T must be equal
-	 *           to the T argument that construct<T, ...> was called with. Not
-	 *           even base class of T is allowed!
-	 */
-	template <typename T>
-	T * get_typed() const
-	{
-		arc_CHECK_Precondition(value && std::is_const_v<T> == DEBUG_valueIsConst);
-		return static_cast<T *>(value);
-	}
-
-	void * get_untyped() const
-	{
-		arc_CHECK_Precondition(value && !DEBUG_valueIsConst);
-		return value;
-	}
-
-	const void * get_const_untyped() const
-	{
-		arc_CHECK_Precondition(value && DEBUG_valueIsConst);
-		return value;
-	}
-
 	~control_block();
+
+	arc::detail::result_store result;
 
 private:
 	template <typename T>
@@ -62,43 +44,37 @@ private:
 
 	friend arc::detail::store;
 	friend arc::detail::handle;
-	friend arc::detail::promise_base;
-	friend arc::detail::scheduler;
+	friend arc::detail::coro_promise_base;
 
 	template <typename F>
 	friend struct arc::detail::key_impl;
 
-private:
 	void add_reference() noexcept;
 	void remove_reference(arc::detail::handle && coroHandle);
 
-	bool is_done() const { return !waiters.ReadOnly()->has_value(); }
+	bool is_done() const { return !waiters.read_only()->has_value(); }
 
 	/**
-	 * \returns true if the continuation was scheduled. False means that the window
-	 *          for signaling continuations has passed and that the continuation
-	 *          should be handled by the caller of this function instead.
+	 * \returns true if the continuation was scheduled. False means that the window for signaling
+	 *          continuations has passed and that the continuation should be handled by the caller
+	 *          of this function instead.
 	 */
-	bool try_add_continuation(arc::function<void()> && continuation);
+	bool try_add_continuation(arc::function<void()> && continuation, arc::detail::zone_info zone);
 
-private:
 	struct Waiters
 	{
-		std::vector<arc::function<void()>> continuations;
+		struct Continuation
+		{
+			arc::function<void()> function;
+			arc::detail::zone_info zone;
+		};
+		std::vector<Continuation> continuations;
 	};
 
 private:
 	std::atomic_size_t referenceCount{ 0 };
 
-	arc::detail::promise_base * promiseBase = nullptr;
-
-	void * value = nullptr;
-	bool DEBUG_valueIsConst = true;
-	std::exception_ptr exception;
-
-	void (*deleter)(void *) = nullptr;
-
-	arc::extra::shared_guard<std::optional<Waiters>> waiters{ std::in_place };
+	arc::util::shared_guard<std::optional<Waiters>> waiters{ std::in_place };
 #if arc_TRACE_INSTRUMENTATION_ENABLE
 	/**
 	 * HACK: this guarded by dataHandle lock

@@ -1,6 +1,12 @@
 #pragma once
 
-#include "arc/fwd.hpp"
+#include "arc/detail/key.hpp"
+
+namespace arc::detail
+{
+	struct store;
+	struct handle;
+}
 
 struct arc::detail::handle
 {
@@ -24,11 +30,12 @@ private:
 	void release();
 	void abandon();
 
-	arc::detail::store_entry * storeEntry = nullptr;
-
 	friend arc::detail::store;
 	friend arc::detail::control_block;
 
 	template <typename F>
 	friend struct arc::detail::key_impl;
+
+private:
+	arc::detail::store_entry * storeEntry = nullptr;
 };

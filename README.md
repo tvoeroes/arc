@@ -28,9 +28,9 @@ private:
 arc::coro<const int> process_images(arc::context & ctx)
 {
 	std::vector<arc::future<const MyImage>> futures{
-		ctx(MyImage::make, "image1.png"),
-		ctx(MyImage::make, "image2.png"),
-		ctx(MyImage::make, "image3.png"),
+		ctx[MyImage::make, "image1.png"],
+		ctx[MyImage::make, "image2.png"],
+		ctx[MyImage::make, "image3.png"],
 	};
 
 	std::vector loadedImages = co_await arc::all<const MyImage>{ ctx, futures };
@@ -44,7 +44,7 @@ int main()
 {
 	arc::options options{ .workerThreadCount = 2 };
 	arc::context ctx{ options };
-	arc::future future = ctx(process_images);
+	arc::future future = ctx[process_images];
 	arc::result result = future.active_wait();
 }
 ```
@@ -60,7 +60,7 @@ For more examples see [arc_example_2.cpp](tests/arc_example_2.cpp),
 #include <arc/arc.hpp>
 ```
 
-See [fwd.hpp](include/arc/fwd.hpp) for an overview.
+See [arc_api_test.cpp](tests/arc_api_test.cpp) for an overview.
 
 Also see [context.hpp](include/arc/arc/context.hpp),
 [future.hpp](include/arc/arc/future.hpp) and

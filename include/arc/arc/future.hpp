@@ -1,9 +1,19 @@
 #pragma once
 
+#include "arc/arc/result.hpp"
 #include "arc/detail/handle.hpp"
-#include "arc/fwd.hpp"
-#include "arc/util/std.hpp"
 #include "arc/util/util.hpp"
+
+#include <type_traits>
+
+namespace arc
+{
+	template <typename T>
+	auto get_self_reference();
+
+	template <typename T>
+	struct future;
+}
 
 template <typename T>
 struct arc::future
@@ -64,8 +74,8 @@ public:
 	 * Adds callback to the list of callbacks that will be called when the result is ready. The
 	 * callback will be invoked immediately if the result is already ready. Note that the future
 	 * instance does not need to be kept alive until the callback has been called and that the
-	 * callback will be called regardless of whether there are any instances of future alive when
-	 * the result is ready.
+	 * callback will be called regardless of whether there are any instances of future alive
+	 * when the result is ready.
 	 * @{
 	 */
 	void async_wait_and_then(arc::function<void()> && callback) const;
@@ -73,9 +83,8 @@ public:
 	/** @} */
 
 	/**
-	 * Synchronously actively waits for the result and returns result when the
-	 * result becomes available. Active wait means that the thread joins the
-	 * worker pool while waiting.
+	 * Synchronously actively waits for the result and returns result when the result becomes
+	 * available. Active wait means that the thread joins the worker pool while waiting.
 	 */
 	arc::result<T> active_wait();
 
@@ -83,20 +92,20 @@ public:
 	arc::result<T> try_wait();
 
 	/**
-	 * Suspends the caller until the result is available, then reschedules the
-	 * caller on a worker thread. Returns result on resumption.
+	 * Suspends the caller until the result is available, then reschedules the caller on a worker
+	 * thread. Returns result on resumption. Resumed immediately with default constructed result if
+	 * *this is default constructed.
 	 */
 	auto operator co_await();
 
 private:
-	using resolve_type = T * (*)(util::const_matching_void_t<T> *);
+	using resolve_type = std::remove_reference_t<T> * (*)(util::const_matching_void_t<T> *);
 
 	explicit future(arc::detail::handle && handle);
 
 	struct impl;
 
 	friend arc::context;
-	friend arc::detail::store;
 
 	template <typename U>
 	friend auto arc::get_self_reference();

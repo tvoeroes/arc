@@ -1,12 +1,18 @@
 #pragma once
 
-#include "arc/fwd.hpp"
-#include "arc/util/std.hpp"
-
+#include <array>
+#include <span>
+#include <thread>
 #include <vector>
+
+namespace arc
+{
+	struct options;
+}
 
 struct arc::options
 {
+public:
 	size_t workerThreadCount = 0;
 	std::thread::id mainThreadId;
 	std::vector<const char *> args;

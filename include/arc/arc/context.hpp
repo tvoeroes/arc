@@ -1,20 +1,40 @@
 #pragma once
 
+#include "arc/arc/coro.hpp"
 #include "arc/arc/future.hpp"
 #include "arc/arc/key_of.hpp"
 #include "arc/arc/options.hpp"
 #include "arc/arc/promise_proxy.hpp"
 #include "arc/detail/globals.hpp"
-#include "arc/detail/name_store.hpp"
 #include "arc/detail/scheduler.hpp"
 #include "arc/detail/store.hpp"
-#include "arc/extra/non_copyable_non_movable.hpp"
-#include "arc/fwd.hpp"
-#include "arc/util/std.hpp"
+#include "arc/util/non_copyable_non_movable.hpp"
+#include "arc/util/util.hpp"
 
-struct arc::context : private arc::extra::non_copyable_non_movable
+#include <coroutine>
+#if arc_WITH_SOURCE_LOCATION
+	#include <source_location>
+#endif
+
+namespace arc
+{
+	struct context;
+}
+
+namespace arc
+{
+	template <typename T>
+	struct task;
+
+	template <typename T>
+	class task_future;
+}
+
+struct arc::context
 {
 public:
+	arc_NON_COPYABLE_NON_MOVABLE(context);
+
 	context();
 
 	context(const arc::options & options);
@@ -23,22 +43,25 @@ public:
 
 	auto schedule_on_worker_thread();
 	void schedule_on_worker_thread(std::coroutine_handle<> handle);
-	void schedule_on_worker_thread(arc::function<void()> && task);
+	void schedule_on_worker_thread(arc::function<void()> && task, arc::detail::zone_info zone);
 	auto schedule_on_worker_thread_after(arc::time_point timePoint);
 	void schedule_on_worker_thread_after(std::coroutine_handle<> handle, arc::time_point timePoint);
+	void schedule_on_worker_thread_after(
+		arc::function<void()> && task, arc::time_point timePoint, arc::detail::zone_info zone);
 
 	auto schedule_on_main_thread();
 	void schedule_on_main_thread(std::coroutine_handle<> handle);
-	void schedule_on_main_thread(arc::function<void()> && task);
+	void schedule_on_main_thread(arc::function<void()> && task, arc::detail::zone_info zone);
 	auto schedule_on_main_thread_after(arc::time_point timePoint);
 	void schedule_on_main_thread_after(std::coroutine_handle<> handle, arc::time_point timePoint);
+	void schedule_on_main_thread_after(
+		arc::function<void()> && task, arc::time_point timePoint, arc::detail::zone_info zone);
 
 	/**
-	 * \defgroup Set Caching Policy Global
-	 * Defers the destruction of the result until arc::context is destroyed.
-	 * This does not guarantee that the result will not be recreated during
-	 * context destruction. This might happen for example due to another results
-	 * destructor requesting the global again after it has been released.
+	 * \defgroup Set Caching Policy Global Defers the destruction of the result until arc::context
+	 * is destroyed. This does not guarantee that the result will not be recreated during context
+	 * destruction. This might happen for example due to another results destructor requesting the
+	 * global again after it has been released.
 	 * @{
 	 */
 	template <typename T>
@@ -49,33 +72,61 @@ public:
 
 	const arc::options & options() const;
 
-	arc::detail::name_store & name_store();
+	template <typename F>
+	arc::future<arc::result_of_t<F>> operator[](
+		F * f
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(F * f arc_SOURCE_LOCATION_ARG_DEFAULT);
+	arc::future<arc::result_of_t<F>> operator[](
+		F * f, arc::key_of_t<F, 0> key0
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(
-		F * f, arc::key_of_t<F, 0> key0 arc_SOURCE_LOCATION_ARG_DEFAULT);
+	arc::future<arc::result_of_t<F>> operator[](
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(
-		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1 arc_SOURCE_LOCATION_ARG_DEFAULT);
+	arc::future<arc::result_of_t<F>> operator[](
+		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(
-		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1,
-		arc::key_of_t<F, 2> key2 arc_SOURCE_LOCATION_ARG_DEFAULT);
-
-	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(
+	arc::future<arc::result_of_t<F>> operator[](
 		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
-		arc::key_of_t<F, 3> key3 arc_SOURCE_LOCATION_ARG_DEFAULT);
+		arc::key_of_t<F, 3> key3
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	template <typename F>
-	arc::future<arc::result_of_t<F>> operator()(
+	arc::future<arc::result_of_t<F>> operator[](
 		F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
-		arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4 arc_SOURCE_LOCATION_ARG_DEFAULT);
+		arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4
+#if arc_WITH_SOURCE_LOCATION
+		,
+		const std::source_location & sourceLocation = std::source_location::current()
+#endif
+	);
 
 	friend bool operator==(const context & lhs, const context & rhs) noexcept
 	{
@@ -83,8 +134,6 @@ public:
 	}
 
 private:
-	friend arc::detail::scheduler;
-
 	template <typename F>
 	friend struct arc::detail::key_impl;
 
@@ -93,10 +142,14 @@ private:
 	template <typename T>
 	friend struct future;
 
+	template <typename T>
+	friend struct arc::task;
+
+	template <typename T>
+	friend class arc::task_future;
+
 private:
 	arc::options options_;
-	/** NOTE: Must be constructed before arc::detail::scheduler */
-	arc::detail::name_store names;
 	arc::detail::store store;
 	/**
 	 *  NOTE: The arc::detail::scheduler must be destroyed before most of the other members of
@@ -107,7 +160,7 @@ private:
 	arc::detail::globals globals;
 };
 
-namespace arc::extra
+namespace arc::util
 {
 	template <typename Hash>
 	void hash_append(Hash & hash, const arc::context & value)

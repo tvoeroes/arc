@@ -1,6 +1,6 @@
 #include "arc/arc.hpp"
 
-#include "arc/extra/non_copyable_non_movable.hpp"
+#include "arc/util/non_copyable_non_movable.hpp"
 #include "testing_macros.hpp"
 
 #include <array>
@@ -20,7 +20,7 @@ struct Vec3
 	friend auto operator<=>(const Vec3 & lhs, const Vec3 & rhs) = default;
 };
 
-namespace arc::extra
+namespace arc::util
 {
 	template <typename Hash>
 	void hash_append(Hash & hash, const Vec3 & value)
@@ -31,47 +31,34 @@ namespace arc::extra
 	}
 }
 
-struct CoroHelloWorld
+static arc::coro<const std::string> get_hello_world(arc::context & ctx)
 {
-	std::string message;
-
-	static arc::coro<CoroHelloWorld> arc_make(arc::context & ctx) { co_return { "Hello, World!" }; }
-};
+	co_return "Hello, World!";
+}
 
 TEST_CASE("Coro Hello World", "[Coro]")
 {
 	arc::context ctx;
-	arc::result result = ctx(CoroHelloWorld::arc_make).active_wait();
-	CHECK(result->message == "Hello, World!");
+	arc::result result = ctx[get_hello_world].active_wait();
+	CHECK(*result == "Hello, World!");
 }
 
-struct CoroHelloMessage
+/**
+ * This function demonstrates the signature pattern for a keyed result.
+ * The second and subsequent arguments are the key types.
+ */
+static arc::coro<const std::string &> get_hello_message(arc::context & ctx, const std::string & key)
 {
-	const std::string & message;
-
 	/**
-	 * This function is used as the constructor for the result. It must have the
-	 * signature pattern as shown below. The second and third arguments are
-	 * either to present (global) or one of possible key types.
+	 * The key object remains valid for the lifetime of the result.
 	 */
-	static arc::coro<CoroHelloMessage> arc_make(arc::context & ctx, const std::string & key)
-	{
-		/**
-		 * The key object remains valid for the lifetime of the result.
-		 */
-		co_return { key };
-	}
-};
+	co_return key;
+}
 
-struct CoroHelloTile
+static arc::coro<const Vec3 * const> get_hello_tile(arc::context & ctx, const Vec3 & key)
 {
-	const Vec3 & tileId;
-
-	static arc::coro<CoroHelloTile> arc_make(arc::context & ctx, const Vec3 & key)
-	{
-		co_return { key };
-	}
-};
+	co_return &key;
+}
 
 struct CoroBaseResult
 {
@@ -83,14 +70,14 @@ struct CoroBaseResult
 
 struct CoroDerivedResult1 : CoroBaseResult
 {
-	static arc::coro<CoroDerivedResult1> arc_make(arc::context & ctx) { co_return { 1 }; }
+	static arc::coro<const CoroDerivedResult1> arc_make(arc::context & ctx) { co_return { 1 }; }
 };
 
 struct CoroDerivedResult2 : CoroBaseResult
 {
 	int z = 33;
 
-	static arc::coro<CoroDerivedResult2> arc_make(arc::context & ctx) { co_return { 2 }; }
+	static arc::coro<const CoroDerivedResult2> arc_make(arc::context & ctx) { co_return { 2 }; }
 };
 
 arc::coro<const CoroDerivedResult2> const_struct(arc::context & ctx) { co_return {}; }
@@ -100,8 +87,8 @@ arc::coro<const int> const_int(arc::context & ctx) { co_return 72; }
 arc::coro<std::atomic_int> atomic_int(arc::context & ctx)
 {
 	arc::promise_proxy promise = co_await arc::get_promise_proxy<std::atomic_int>();
-	std::atomic_int * result = promise.construct();
-	*result = 72;
+	std::atomic_int & result = promise.construct();
+	result = 72;
 	co_return promise;
 }
 
@@ -110,27 +97,27 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 	SECTION("using a key")
 	{
 		arc::context ctx;
-		arc::result result = ctx(CoroHelloMessage::arc_make, "Hello, Message!").active_wait();
-		CHECK(result->message == "Hello, Message!");
+		arc::result result = ctx[get_hello_message, "Hello, Message!"].active_wait();
+		CHECK(*result == "Hello, Message!");
 	}
 
 	SECTION("use a thread pool")
 	{
 		arc::context ctx{ arc::options::two_threads() };
-		arc::result result = ctx(CoroHelloMessage::arc_make, "Hello, Threads!").active_wait();
-		CHECK(result->message == "Hello, Threads!");
+		arc::result result = ctx[get_hello_message, "Hello, Threads!"].active_wait();
+		CHECK(*result == "Hello, Threads!");
 	}
 
 	SECTION("synchronously access multiple results")
 	{
 		arc::context ctx;
 
-		arc::result result = ctx(CoroHelloTile::arc_make, { 10, 326, 510 }).active_wait();
+		arc::result result = ctx[get_hello_tile, Vec3{ 10, 326, 510 }].active_wait();
 
 		/** the result is available after Wait returns */
 		{
 			REQUIRE(result);
-			CHECK(result->tileId == Vec3{ 10, 326, 510 });
+			CHECK(**result == Vec3{ 10, 326, 510 });
 		}
 
 		/** release result references */
@@ -139,11 +126,11 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 			CHECK_FALSE(result);
 		}
 
-		arc::future future = ctx(CoroHelloTile::arc_make, Vec3{ 5, 13, 4 });
+		arc::future future = ctx[get_hello_tile, Vec3{ 5, 13, 4 }];
 
 		/** future wait function */
 		result = future.active_wait();
-		CHECK(result->tileId == Vec3{ 5, 13, 4 });
+		CHECK(**result == Vec3{ 5, 13, 4 });
 	}
 
 	SECTION("poll result")
@@ -159,9 +146,9 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 
 		arc::context ctx{ options };
 
-		arc::future future = ctx(CoroHelloMessage::arc_make, "Polling");
+		arc::future future = ctx[get_hello_message, "Polling"];
 
-		arc::result<CoroHelloMessage> result;
+		arc::result<const std::string &> result;
 
 		do
 		{
@@ -171,9 +158,9 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 
 		CHECK(result);
 
-		arc::future future2 = ctx(CoroHelloMessage::arc_make, "Polling");
+		arc::future future2 = ctx[get_hello_message, "Polling"];
 
-		arc::result<CoroHelloMessage> result2 = future2.try_wait();
+		arc::result<const std::string &> result2 = future2.try_wait();
 
 		/**
 		 * the result already exists therefore arc::future::try_wait() returns
@@ -194,7 +181,7 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		 * a future can be abandoned without awaiting it but the result will
 		 * still be calculated and destructed
 		 */
-		arc::future result = ctx(CoroHelloMessage::arc_make, "Unused :(");
+		arc::future result = ctx[get_hello_message, "Unused :("];
 
 		/** future can be checked for whether it can be awaited on */
 		CHECK(result);
@@ -204,12 +191,12 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 	{
 		arc::context ctx;
 
-		std::array<arc::future<CoroBaseResult>, 2> futures;
-		std::array<arc::result<CoroBaseResult>, 2> results;
+		std::array<arc::future<const CoroBaseResult>, 2> futures;
+		std::array<arc::result<const CoroBaseResult>, 2> results;
 
 		/** up-casting */
-		futures[0] = ctx(CoroDerivedResult1::arc_make);
-		futures[1] = ctx(CoroDerivedResult2::arc_make);
+		futures[0] = ctx[CoroDerivedResult1::arc_make];
+		futures[1] = ctx[CoroDerivedResult2::arc_make];
 
 		/**
 		 *  WARNING: there is currently a limitation on how many times an
@@ -231,7 +218,9 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 	{
 		arc::context ctx;
 
-		arc::future future1 = ctx(CoroDerivedResult1::arc_make);
+		arc::result nullResult = arc::future<const void>{}.active_wait();
+
+		arc::future future1 = ctx[CoroDerivedResult1::arc_make];
 
 		/** copy construct */
 		arc::future future2 = future1;
@@ -239,12 +228,12 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** move construct */
 		arc::future future3{ std::move(future1) };
 
-		arc::future<CoroDerivedResult1> future4;
-		arc::future<CoroDerivedResult1> future5;
+		arc::future<const CoroDerivedResult1> future4;
+		arc::future<const CoroDerivedResult1> future5;
 
-		arc::future<CoroBaseResult> future6;
-		arc::future<CoroBaseResult> future7;
-		arc::future<CoroBaseResult> future8;
+		arc::future<const CoroBaseResult> future6;
+		arc::future<const CoroBaseResult> future7;
+		arc::future<const CoroBaseResult> future8;
 
 		/** copy assign */
 		future4 = future2;
@@ -263,13 +252,13 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		future7 = future8;
 		CHECK(future7);
 
-		arc::future future9 = ctx(CoroDerivedResult2::arc_make);
+		arc::future future9 = ctx[CoroDerivedResult2::arc_make];
 
 		/** member aliasing */
-		arc::future<int> future10{ arc::util::value_tag<&CoroDerivedResult2::z>{}, future9 };
+		arc::future<const int> future10{ arc::util::value_tag<&CoroDerivedResult2::z>{}, future9 };
 		CHECK(future9);
-		arc::future<int> future11{ arc::util::value_tag<&CoroDerivedResult2::z>{},
-								   std::move(future9) };
+		arc::future<const int> future11{ arc::util::value_tag<&CoroDerivedResult2::z>{},
+										 std::move(future9) };
 		CHECK(!future9);
 
 		arc::result result1 = future10.active_wait();
@@ -306,8 +295,8 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** reference was moved out, now it holds no result */
 		CHECK(!result3);
 
-		arc::result<CoroBaseResult> result8;
-		arc::result<CoroBaseResult> result9;
+		arc::result<const CoroBaseResult> result8;
+		arc::result<const CoroBaseResult> result9;
 
 		/** default constructed result holds no value */
 		CHECK(!result8);
@@ -325,10 +314,10 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		CHECK(!result5);
 
 		/** aliasing copy construct */
-		arc::result<int> result12{ &result9->value, result9 };
+		arc::result<const int> result12{ &result9->value, result9 };
 
 		/** aliasing move construct */
-		arc::result<int> result13{ &result9->value, std::move(result9) };
+		arc::result<const int> result13{ &result9->value, std::move(result9) };
 
 		/** reference was moved out, now it holds no result */
 		CHECK(!result9);
@@ -342,24 +331,24 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		CHECK(!result12);
 
 		/** type-erased future */
-		arc::future future12 = ctx(CoroDerivedResult1::arc_make);
-		arc::future<CoroDerivedResult1> future13 = future12;
-		arc::future<CoroDerivedResult1> future14 = future12;
-		arc::future<void> future15 = future12;
-		arc::future<void> future16{ std::move(future12) };
-		arc::future<void> future17 = future15;
-		arc::future<void> future18 = std::move(future15);
+		arc::future future12 = ctx[CoroDerivedResult1::arc_make];
+		arc::future<const CoroDerivedResult1> future13 = future12;
+		arc::future<const CoroDerivedResult1> future14 = future12;
+		arc::future<const void> future15 = future12;
+		arc::future<const void> future16{ std::move(future12) };
+		arc::future<const void> future17 = future15;
+		arc::future<const void> future18 = std::move(future15);
 
 		CHECK(!future12);
 		CHECK(!future15);
 
-		arc::result<CoroDerivedResult1> result14 = future13.active_wait();
-		arc::result<void> result15 = future14.active_wait();
-		arc::result<void> result16 = future16.active_wait();
-		arc::result<void> result17{ future17.active_wait() };
-		arc::result<void> result18 = future18.active_wait();
+		arc::result<const CoroDerivedResult1> result14 = future13.active_wait();
+		arc::result<const void> result15 = future14.active_wait();
+		arc::result<const void> result16 = future16.active_wait();
+		arc::result<const void> result17{ future17.active_wait() };
+		arc::result<const void> result18 = future18.active_wait();
 
-		CHECK(static_cast<void *>(result14.get()) == result15.get());
+		CHECK(static_cast<const void * const>(result14.get()) == result15.get());
 		CHECK(result15.get() == result16.get());
 		CHECK(result15.get() == result17.get());
 		CHECK(result15.get() == result18.get());
@@ -372,10 +361,10 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 	{
 		arc::context ctx;
 
-		arc::future<const int> const_int_future = ctx(const_int);
-		arc::future<std::atomic_int> atomic_int_future = ctx(atomic_int);
+		arc::future<const int> const_int_future = ctx[const_int];
+		arc::future<std::atomic_int> atomic_int_future = ctx[atomic_int];
 		/** The following lines should fail to compile: */
-		/** arc::future<int> non_const_int_future_0 = ctx(const_int); */
+		/** arc::future<int> non_const_int_future_0 = ctx[const_int]; */
 		/** arc::future<int> non_const_int_future_1 = const_int_future; */
 
 		/** The function returns a const int. */
@@ -385,14 +374,18 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** const_int_result = 42; */
 
 		arc::result<std::atomic_int> atomic_int_result = atomic_int_future.active_wait();
-		arc::result<std::atomic_int> atomic_int_result_22 = ctx(atomic_int).active_wait();
+		arc::result<std::atomic_int> atomic_int_result_22 = ctx[atomic_int].active_wait();
 
 		/** atomic_int_result can be modified. */
 		int previous = atomic_int_result->fetch_add(2);
 
 		static constexpr auto member_ptr_tag = arc::util::value_tag<&CoroDerivedResult2::z>{};
 
-		arc::future<const CoroDerivedResult2> const_struct_future = ctx(const_struct);
+		arc::future<const CoroDerivedResult2> non_const_struct_future =
+			ctx[CoroDerivedResult2::arc_make];
+		arc::future<const CoroBaseResult> non_const_struct_future_base = non_const_struct_future;
+		arc::future<const CoroBaseResult> const_struct_future_base = non_const_struct_future;
+		arc::future<const CoroDerivedResult2> const_struct_future = ctx[const_struct];
 		arc::future<const int> const_int_future_2{ member_ptr_tag, const_struct_future };
 		arc::future<const int> const_int_future_3{ member_ptr_tag, std::move(const_struct_future) };
 		/** The following lines should fail to compile: */
@@ -405,12 +398,12 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		/** arc::result<int> int_result_4{ const_int_result }; */
 		/** arc::result<int> int_result_5{ std::move(const_int_result) }; */
 
-		arc::future<const CoroBaseResult> const_struct_future_2 = ctx(const_struct);
-		arc::future<const CoroDerivedResult2> const_struct_future_3 = ctx(const_struct);
-		arc::future<const CoroDerivedResult2> const_struct_future_4 = ctx(const_struct);
-		arc::future<const CoroDerivedResult2> const_struct_future_5 = ctx(const_struct);
-		arc::future<const CoroDerivedResult2> const_struct_future_6 = ctx(const_struct);
-		arc::future<const CoroDerivedResult2> const_struct_future_7 = ctx(const_struct);
+		arc::future<const CoroBaseResult> const_struct_future_2 = ctx[const_struct];
+		arc::future<const CoroDerivedResult2> const_struct_future_3 = ctx[const_struct];
+		arc::future<const CoroDerivedResult2> const_struct_future_4 = ctx[const_struct];
+		arc::future<const CoroDerivedResult2> const_struct_future_5 = ctx[const_struct];
+		arc::future<const CoroDerivedResult2> const_struct_future_6 = ctx[const_struct];
+		arc::future<const CoroDerivedResult2> const_struct_future_7 = ctx[const_struct];
 		arc::result<const CoroBaseResult> const_struct_res_0 = const_struct_future_3.active_wait();
 		arc::result<const CoroBaseResult> const_struct_res_1{ const_struct_future_4.active_wait() };
 		arc::result<const CoroDerivedResult2> const_struct_res_2{
@@ -436,8 +429,8 @@ TEST_CASE("Coro Synchronous Wait", "[Coro]")
 		arc::result<const std::atomic_int> atomic_int_result_4{ std::move(atomic_int_result) };
 		arc::result<const std::atomic_int> atomic_int_result_5 = std::move(atomic_int_result_22);
 
-		arc::future<std::atomic_int> atomic_int_future_2 = ctx(atomic_int);
-		arc::future<std::atomic_int> atomic_int_future_3 = ctx(atomic_int);
+		arc::future<std::atomic_int> atomic_int_future_2 = ctx[atomic_int];
+		arc::future<std::atomic_int> atomic_int_future_3 = ctx[atomic_int];
 
 		/**
 		 * NOTE: The following lines do not work because support not implemented:
@@ -462,23 +455,18 @@ void throw_on_bad_input_for_fibonacci(int64_t n)
 /**
  * Time Complexity: Between O(N) and O(2^N). Depends on result caching settings.
  */
-struct CoroRecursiveFibonacci
+static arc::coro<const int64_t> RecursiveFibonacci(arc::context & ctx, const int64_t & n)
 {
-	int64_t value = 0;
+	throw_on_bad_input_for_fibonacci(n);
 
-	static arc::coro<CoroRecursiveFibonacci> arc_make(arc::context & ctx, const int64_t & n)
-	{
-		throw_on_bad_input_for_fibonacci(n);
+	if (n < 2)
+		co_return n;
 
-		if (n < 2)
-			co_return { n };
+	arc::result a = co_await ctx[RecursiveFibonacci, n - 1];
+	arc::result b = co_await ctx[RecursiveFibonacci, n - 2];
 
-		arc::result a = co_await ctx(CoroRecursiveFibonacci::arc_make, n - 1);
-		arc::result b = co_await ctx(CoroRecursiveFibonacci::arc_make, n - 2);
-
-		co_return { a->value + b->value };
-	}
-};
+	co_return *a + *b;
+}
 
 /**
  * Time Complexity: O(N).
@@ -487,10 +475,11 @@ struct CoroRecursiveCachedFibonacci
 {
 	int64_t value = 0;
 
-	arc::result<CoroRecursiveCachedFibonacci> a;
-	arc::result<CoroRecursiveCachedFibonacci> b;
+	arc::result<const CoroRecursiveCachedFibonacci> a;
+	arc::result<const CoroRecursiveCachedFibonacci> b;
 
-	static arc::coro<CoroRecursiveCachedFibonacci> arc_make(arc::context & ctx, const int64_t & n)
+	static arc::coro<const CoroRecursiveCachedFibonacci> arc_make(
+		arc::context & ctx, const int64_t & n)
 	{
 		throw_on_bad_input_for_fibonacci(n);
 
@@ -501,8 +490,8 @@ struct CoroRecursiveCachedFibonacci
 		 * co_await is deferred to allow both dependencies to be computed in
 		 * parallel because the tasks are launched eagerly
 		 */
-		arc::future futureA = ctx(CoroRecursiveCachedFibonacci::arc_make, n - 1);
-		arc::future futureB = ctx(CoroRecursiveCachedFibonacci::arc_make, n - 2);
+		arc::future futureA = ctx[CoroRecursiveCachedFibonacci::arc_make, n - 1];
+		arc::future futureB = ctx[CoroRecursiveCachedFibonacci::arc_make, n - 2];
 
 		arc::result a = co_await futureA;
 		arc::result b = co_await futureB;
@@ -533,7 +522,7 @@ struct CoroLinearRecursiveFibonacci
 		if (n == 1)
 			co_return { 1, 0 };
 
-		arc::result previous = co_await ctx(CoroLinearRecursiveFibonacci::arc_make, n - 1);
+		arc::result previous = co_await ctx[CoroLinearRecursiveFibonacci::arc_make, n - 1];
 
 		int64_t value = previous->value + previous->previous.value_or(0);
 
@@ -545,19 +534,19 @@ TEST_CASE("Coro co_await", "[Coro]")
 {
 	arc::context ctx;
 
-	arc::future a = ctx(CoroRecursiveFibonacci::arc_make, -1);
+	arc::future a = ctx[RecursiveFibonacci, -1];
 	CHECK_THROWS_AS(a.active_wait(), std::domain_error);
 
-	arc::future b = ctx(CoroRecursiveFibonacci::arc_make, 93);
+	arc::future b = ctx[RecursiveFibonacci, 93];
 	CHECK_THROWS_AS(b.active_wait(), std::overflow_error);
 
-	arc::future c = ctx(CoroRecursiveFibonacci::arc_make, 10);
-	CHECK(c.active_wait()->value == int64_t(55));
+	arc::future c = ctx[RecursiveFibonacci, 10];
+	CHECK(*c.active_wait() == int64_t(55));
 
-	arc::future d = ctx(CoroRecursiveCachedFibonacci::arc_make, 92);
+	arc::future d = ctx[CoroRecursiveCachedFibonacci::arc_make, 92];
 	CHECK(d.active_wait()->value == int64_t(7540113804746346429));
 
-	arc::future e = ctx(CoroLinearRecursiveFibonacci::arc_make, 92);
+	arc::future e = ctx[CoroLinearRecursiveFibonacci::arc_make, 92];
 	CHECK(e.active_wait()->value == int64_t(7540113804746346429));
 }
 
@@ -565,7 +554,7 @@ TEST_CASE("Coro multithreaded", "[Coro]")
 {
 	arc::context ctx{ arc::options{ .workerThreadCount = 4 } };
 
-	arc::future a = ctx(CoroRecursiveCachedFibonacci::arc_make, 92);
+	arc::future a = ctx[CoroRecursiveCachedFibonacci::arc_make, 92];
 
 	/**
 	 * NOTE: Disclaimer: since computing a fibonacci step is very quick, the
@@ -578,9 +567,9 @@ TEST_CASE("Coro multithreaded", "[Coro]")
 TEST_CASE("Coro get_key", "[Coro]")
 {
 	arc::context ctx;
-	arc::result result = ctx(CoroHelloMessage::arc_make, "Hello!").active_wait();
+	arc::result result = ctx[get_hello_message, "Hello!"].active_wait();
 
-	CHECK(result.get_key<std::string, 0>(CoroHelloMessage::arc_make) == "Hello!");
+	CHECK(result.get_key<std::string, 0>(get_hello_message) == "Hello!");
 
 	/**
 	 * NOTE: Undefined behavior, wrong key type
@@ -588,23 +577,23 @@ TEST_CASE("Coro get_key", "[Coro]")
 	 */
 
 	/** result referencing const char 'H' */
-	arc::result<const char> alias{ &result->message[0], result };
+	arc::result<const char> alias{ &(*result)[0], result };
 
 	/** alias results retain the original key */
-	CHECK(alias.get_key<std::string, 0>(CoroHelloMessage::arc_make) == "Hello!");
+	CHECK(alias.get_key<std::string, 0>(get_hello_message) == "Hello!");
 }
 
 struct CoroAwaitsAll
 {
 	static arc::coro<CoroAwaitsAll> arc_make(arc::context & ctx)
 	{
-		std::vector<arc::future<void>> jobs;
+		std::vector<arc::future<const void>> jobs;
 
-		jobs.emplace_back(ctx(CoroHelloWorld::arc_make));
-		jobs.emplace_back(ctx(CoroDerivedResult1::arc_make));
-		jobs.emplace_back(ctx(CoroRecursiveCachedFibonacci::arc_make, 5));
+		jobs.emplace_back(ctx[get_hello_world]);
+		jobs.emplace_back(ctx[CoroDerivedResult1::arc_make]);
+		jobs.emplace_back(ctx[CoroRecursiveCachedFibonacci::arc_make, 5]);
 
-		std::vector results = co_await arc::all<void>{ ctx, jobs };
+		std::vector results = co_await arc::all<const void>{ ctx, jobs };
 
 		co_return {};
 	}
@@ -613,11 +602,13 @@ struct CoroAwaitsAll
 TEST_CASE("Coro wait all", "[Coro]")
 {
 	arc::context ctx;
-	ctx(CoroAwaitsAll::arc_make).active_wait();
+	ctx[CoroAwaitsAll::arc_make].active_wait();
 }
 
-struct CoroInPlace : private arc::extra::non_copyable_non_movable
+struct CoroInPlace
 {
+	arc_NON_COPYABLE_NON_MOVABLE(CoroInPlace);
+
 	CoroInPlace(int val)
 		: val{ val }
 	{}
@@ -632,7 +623,7 @@ struct CoroInPlace : private arc::extra::non_copyable_non_movable
 		 * co_return-ed instead.
 		 */
 		arc::promise_proxy promise = co_await arc::get_promise_proxy<CoroInPlace>();
-		CoroInPlace * result = promise.construct(5);
+		CoroInPlace & result = promise.construct(5);
 		co_return promise;
 	}
 };
@@ -640,7 +631,7 @@ struct CoroInPlace : private arc::extra::non_copyable_non_movable
 TEST_CASE("Coro get_promise_proxy", "[Coro]")
 {
 	arc::context ctx;
-	arc::result result = ctx(CoroInPlace::arc_make).active_wait();
+	arc::result result = ctx[CoroInPlace::arc_make].active_wait();
 	CHECK(result->val == 5);
 }
 
@@ -661,16 +652,18 @@ struct CoroFunnelExample
 
 		static constexpr size_t MAX_CONCURRENCY = 10;
 
-		arc::funnel<CoroHelloMessage> funnel{ ctx };
+		arc::funnel<arc::future<const std::string &>> funnel{
+			[&ctx](std::coroutine_handle<> handle) { ctx.schedule_on_worker_thread(handle); }
+		};
 
-		auto process = [](const CoroHelloMessage & m) { CHECK(m.message.size() == 3); };
+		auto process = [](const std::string & m) { CHECK(m.size() == 3); };
 
 		for (const std::string & key : jobKeys)
 		{
 			if (funnel.size() == MAX_CONCURRENCY)
 				process(*co_await funnel);
 
-			funnel.push(ctx(CoroHelloMessage::arc_make, key));
+			funnel.push(ctx[get_hello_message, key]);
 		}
 
 		while (funnel.size())
@@ -683,7 +676,7 @@ struct CoroFunnelExample
 TEST_CASE("Coro Funnel", "[Coro]")
 {
 	arc::context ctx{ arc::options{ .workerThreadCount = 3 } };
-	arc::future a = ctx(CoroFunnelExample::arc_make);
+	arc::future a = ctx[CoroFunnelExample::arc_make];
 	arc::result r = a.active_wait();
 }
 
@@ -692,7 +685,7 @@ static std::string NonCoroFunction(arc::context & ctx) { return "Hello, World!";
 TEST_CASE("Non-Coro Function", "[Coro]")
 {
 	arc::context ctx;
-	arc::future future = ctx(NonCoroFunction);
+	arc::future future = ctx[NonCoroFunction];
 	arc::result result = future.active_wait();
 	CHECK(result);
 	CHECK(*result == "Hello, World!");
@@ -706,8 +699,8 @@ static arc::coro<int64_t> NonCoroFibonacci(arc::context & ctx, const int64_t & n
 		co_return int64_t{ n };
 
 	std::vector abFutures{
-		ctx(NonCoroFibonacci, n - 1),
-		ctx(NonCoroFibonacci, n - 2),
+		ctx[NonCoroFibonacci, n - 1],
+		ctx[NonCoroFibonacci, n - 2],
 	};
 
 	std::vector ab = co_await arc::all<int64_t>{ ctx, abFutures };
@@ -722,7 +715,7 @@ static arc::coro<int64_t> NonCoroFibonacci(arc::context & ctx, const int64_t & n
 TEST_CASE("Non-Coro Fibonacci", "[Coro]")
 {
 	arc::context ctx;
-	arc::future future = ctx(NonCoroFibonacci, 10);
+	arc::future future = ctx[NonCoroFibonacci, 10];
 	arc::result result = future.active_wait();
 	CHECK(result);
 	CHECK(*result == 55);
@@ -737,14 +730,14 @@ static arc::coro<std::string> TwoArgumentsFunction(
 TEST_CASE("Two Arguments Function", "[Coro]")
 {
 	arc::context ctx;
-	arc::result result0 = ctx(TwoArgumentsFunction, 5, "The number is: ").active_wait();
-	arc::result result1 = ctx(TwoArgumentsFunction, 6, "The number is: ").active_wait();
-	arc::result result2 = ctx(TwoArgumentsFunction, 5, "The value is: ").active_wait();
-	arc::result result3 = ctx(TwoArgumentsFunction, 6, "The value is: ").active_wait();
-	arc::result result4 = ctx(TwoArgumentsFunction, 5, "The number is: ").active_wait();
-	arc::result result5 = ctx(TwoArgumentsFunction, 6, "The number is: ").active_wait();
-	arc::result result6 = ctx(TwoArgumentsFunction, 5, "The value is: ").active_wait();
-	arc::result result7 = ctx(TwoArgumentsFunction, 6, "The value is: ").active_wait();
+	arc::result result0 = ctx[TwoArgumentsFunction, 5, "The number is: "].active_wait();
+	arc::result result1 = ctx[TwoArgumentsFunction, 6, "The number is: "].active_wait();
+	arc::result result2 = ctx[TwoArgumentsFunction, 5, "The value is: "].active_wait();
+	arc::result result3 = ctx[TwoArgumentsFunction, 6, "The value is: "].active_wait();
+	arc::result result4 = ctx[TwoArgumentsFunction, 5, "The number is: "].active_wait();
+	arc::result result5 = ctx[TwoArgumentsFunction, 6, "The number is: "].active_wait();
+	arc::result result6 = ctx[TwoArgumentsFunction, 5, "The value is: "].active_wait();
+	arc::result result7 = ctx[TwoArgumentsFunction, 6, "The value is: "].active_wait();
 
 	CHECK(*result0 == "The number is: 5");
 	CHECK(*result1 == "The number is: 6");
@@ -779,7 +772,7 @@ arc::coro<int> f_select(arc::context & ctx, const int64_t & i)
 TEST_CASE("NonCoro Return Coro", "[Coro]")
 {
 	arc::context ctx;
-	ctx(f_select, 1).active_wait();
+	ctx[f_select, 1].active_wait();
 }
 
 arc::coro<bool> LifetimeTrue(arc::context & ctx)
@@ -792,7 +785,7 @@ TEST_CASE("Global Coro", "[Coro]")
 {
 	arc::context ctx;
 
-	arc::result r = ctx(LifetimeTrue).active_wait();
+	arc::result r = ctx[LifetimeTrue].active_wait();
 
 	/** Adding as either arc::result or arc::awaitable works. */
 	ctx.set_caching_policy_global(r);
@@ -829,10 +822,10 @@ TEST_CASE("Enums Work Coro", "[Coro]")
 {
 	arc::context ctx;
 
-	CHECK(*ctx(EnumsWorkCoro0, EnumsWork::B).active_wait());
-	CHECK(*ctx(EnumsWorkCoro1, EnumsWork::B, 5).active_wait());
-	CHECK(*ctx(EnumsWorkCoro2, "dummy", EnumsWork::B).active_wait());
-	CHECK(*ctx(EnumsWorkCoro3, EnumsWork::B, EnumsWork::B).active_wait());
+	CHECK(*ctx[EnumsWorkCoro0, EnumsWork::B].active_wait());
+	CHECK(*ctx[EnumsWorkCoro1, EnumsWork::B, 5].active_wait());
+	CHECK(*ctx[EnumsWorkCoro2, "dummy", EnumsWork::B].active_wait());
+	CHECK(*ctx[EnumsWorkCoro3, EnumsWork::B, EnumsWork::B].active_wait());
 }
 
 static std::string ManyArguments0(arc::context & ctx) { return ""; }
@@ -878,38 +871,87 @@ TEST_CASE("Many Key Arguments", "[Coro]")
 	arc::context ctx;
 
 	{
-		arc::result result = ctx(ManyArguments0).active_wait();
+		arc::result result = ctx[ManyArguments0].active_wait();
 		CHECK(result);
 		CHECK(*result == "");
 	}
 
 	{
-		arc::result result = ctx(ManyArguments1, "Hello").active_wait();
+		arc::result result = ctx[ManyArguments1, "Hello"].active_wait();
 		CHECK(result);
 		CHECK(*result == "Hello");
 	}
 
 	{
-		arc::result result = ctx(ManyArguments2, "Hello", " World!").active_wait();
+		arc::result result = ctx[ManyArguments2, "Hello", " World!"].active_wait();
 		CHECK(result);
 		CHECK(*result == "Hello World!");
 	}
 
 	{
-		arc::result result = ctx(ManyArguments3, "Hello", " ", "World!").active_wait();
+		arc::result result = ctx[ManyArguments3, "Hello", " ", "World!"].active_wait();
 		CHECK(result);
 		CHECK(*result == "Hello World!");
 	}
 
 	{
-		arc::result result = ctx(ManyArguments4, "Hello", " ", "World", "!").active_wait();
+		arc::result result = ctx[ManyArguments4, "Hello", " ", "World", "!"].active_wait();
 		CHECK(result);
 		CHECK(*result == "Hello World!");
 	}
 
 	{
-		arc::result result = ctx(ManyArguments5, "Hello", " ", "World", "! ", ":)").active_wait();
+		arc::result result = ctx[ManyArguments5, "Hello", " ", "World", "! ", ":)"].active_wait();
 		CHECK(result);
 		CHECK(*result == "Hello World! :)");
+	}
+}
+
+TEST_CASE("Timed Schedule", "[Coro]")
+{
+	int32_t counter = 0;
+
+	arc::util::on_scope_exit _ = [&counter] { CHECK(counter == 4); };
+
+	arc::context ctx{ {
+		.mainThreadId = std::this_thread::get_id(),
+	} };
+
+	arc::time_point start = arc::clock::now();
+
+	using namespace std::chrono_literals;
+
+	auto increment = [&counter](int32_t from) {
+		CHECK(counter == from);
+		counter++;
+	};
+
+	ctx.schedule_on_main_thread_after([&increment] { increment(0); }, start + 1ms, "increment");
+	ctx.schedule_on_main_thread_after([&increment] { increment(3); }, start + 3ms, "increment");
+	ctx.schedule_on_main_thread_after([&increment] { increment(1); }, start + 1ms, "increment");
+	ctx.schedule_on_main_thread_after([&increment] { increment(2); }, start + 2ms, "increment");
+}
+
+arc::coro<const int> EarlyPublishDemo(arc::context & ctx, const int & val)
+{
+	arc::promise_proxy<const int> promise = co_await arc::get_promise_proxy<const int>();
+	const int & result = promise.construct(val);
+	/** Publish the result before returning from the function by using the
+	 * publish awaitable. The pointer to the object enables certain checks
+	 * that catch bugs. */
+	co_await arc::publish{ &result };
+	/** The result of this coro is now available. */
+	/** Return the promise proxy when publishing the result through construct() + co_yield. */
+	co_return promise;
+}
+
+TEST_CASE("Early Publish Demo", "[Coro]")
+{
+	arc::context ctx;
+
+	{
+		arc::result result = ctx[EarlyPublishDemo, 7].active_wait();
+		CHECK(result);
+		CHECK(*result == 7);
 	}
 }

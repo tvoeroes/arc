@@ -1,64 +1,124 @@
 #pragma once
 
+#include "arc/detail/name_store.hpp"
 #include "arc/util/tracing.hpp"
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(F * f arc_SOURCE_LOCATION_ARG)
+arc::future<arc::result_of_t<F>> arc::context::operator[](
+	F * f
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 0);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
-		arc::detail::key{ f, *this } arc_SOURCE_LOCATION) };
+		arc::detail::key{ f, *this }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 template <typename F>
-inline arc::future<arc::result_of_t<F>> arc::context::operator()(
-	F * f, arc::key_of_t<F, 0> key0 arc_SOURCE_LOCATION_ARG)
+inline arc::future<arc::result_of_t<F>> arc::context::operator[](
+	F * f, arc::key_of_t<F, 0> key0
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 1);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
-		arc::detail::key{ f, *this, std::move(key0) } arc_SOURCE_LOCATION) };
+		arc::detail::key{ f, *this, std::move(key0) }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(
-	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1 arc_SOURCE_LOCATION_ARG)
+arc::future<arc::result_of_t<F>> arc::context::operator[](
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 2);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
-		arc::detail::key{ f, *this, std::move(key0), std::move(key1) } arc_SOURCE_LOCATION) };
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1) }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(
-	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1,
-	arc::key_of_t<F, 2> key2 arc_SOURCE_LOCATION_ARG)
+arc::future<arc::result_of_t<F>> arc::context::operator[](
+	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 3);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
-		arc::detail::key{ f, *this, std::move(key0), std::move(key1),
-						  std::move(key2) } arc_SOURCE_LOCATION) };
+		arc::detail::key{ f, *this, std::move(key0), std::move(key1), std::move(key2) }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(
+arc::future<arc::result_of_t<F>> arc::context::operator[](
 	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
-	arc::key_of_t<F, 3> key3 arc_SOURCE_LOCATION_ARG)
+	arc::key_of_t<F, 3> key3
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 4);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
 		arc::detail::key{ f, *this, std::move(key0), std::move(key1), std::move(key2),
-						  std::move(key3) } arc_SOURCE_LOCATION) };
+						  std::move(key3) }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 template <typename F>
-arc::future<arc::result_of_t<F>> arc::context::operator()(
+arc::future<arc::result_of_t<F>> arc::context::operator[](
 	F * f, arc::key_of_t<F, 0> key0, arc::key_of_t<F, 1> key1, arc::key_of_t<F, 2> key2,
-	arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4 arc_SOURCE_LOCATION_ARG)
+	arc::key_of_t<F, 3> key3, arc::key_of_t<F, 4> key4
+#if arc_WITH_SOURCE_LOCATION
+	,
+	const std::source_location & sourceLocation
+#endif
+)
 {
 	static_assert(arc::key_count_of_v<F> == 5);
 	return arc::future<arc::result_of_t<F>>{ store.retrieve_reference(
 		arc::detail::key{ f, *this, std::move(key0), std::move(key1), std::move(key2),
-						  std::move(key3), std::move(key4) } arc_SOURCE_LOCATION) };
+						  std::move(key3), std::move(key4) }
+#if arc_WITH_SOURCE_LOCATION
+		,
+		sourceLocation
+#endif
+		) };
 }
 
 inline auto arc::context::schedule_on_worker_thread()
@@ -88,7 +148,7 @@ inline auto arc::get_self_reference()
 	{
 		bool await_ready() const noexcept { return false; }
 
-		bool await_suspend(std::coroutine_handle<arc::detail::promise<T>> awaiter) noexcept
+		bool await_suspend(std::coroutine_handle<arc::detail::coro_promise<T>> awaiter) noexcept
 		{
 			handle = awaiter.promise().handle();
 			return false;
@@ -109,7 +169,7 @@ inline auto arc::get_promise_proxy()
 	{
 		bool await_ready() const noexcept { return false; }
 
-		bool await_suspend(std::coroutine_handle<arc::detail::promise<T>> awaiter) noexcept
+		bool await_suspend(std::coroutine_handle<arc::detail::coro_promise<T>> awaiter) noexcept
 		{
 			handle = awaiter.promise().handle();
 			return false;
@@ -128,23 +188,28 @@ struct arc::future<T>::impl
 {
 	static arc::result<T> get_result(arc::future<T> & self)
 	{
-		arc_CHECK_Precondition(self.handle);
+		if (!self.handle)
+			return {};
 
-		if (self.handle->second.exception)
-		{
-			arc_CHECK_Assert(!self.handle->second.value);
-			std::rethrow_exception(self.handle->second.exception);
-		}
-
-		util::const_matching_void_t<T> * voidPtr = nullptr;
-		if constexpr (std::is_const_v<T>)
-			voidPtr = self.handle->second.get_const_untyped();
-		else
-			voidPtr = self.handle->second.get_untyped();
+		using void_type = util::const_matching_void_t<T>;
+		using ptr_type = std::remove_reference_t<T>;
+		void_type * voidPtr =
+			self.handle->second.result.get_value_or_rethrow_exception<void_type>();
 		arc_CHECK_Assert(voidPtr);
-		T * ptr = self.resolve ? self.resolve(voidPtr) : static_cast<T *>(voidPtr);
+		ptr_type * ptr = self.resolve ? self.resolve(voidPtr) : static_cast<ptr_type *>(voidPtr);
+
 		self.resolve = nullptr;
 		return { ptr, std::move(self.handle) };
+	}
+
+	static arc::result<T> try_get_result(arc::future<T> & self)
+	{
+		if (!self.handle)
+			return {};
+		else if (self.handle->second.is_done())
+			return get_result(self);
+		else
+			return {};
 	}
 
 	template <typename U>
@@ -332,9 +397,9 @@ inline arc::future<T>::operator bool() const noexcept
 template <typename T>
 inline void arc::future<T>::async_wait_and_then(arc::function<void()> && callback) const
 {
-	arc_CHECK_Precondition(handle);
-
-	if (bool added = handle->second.try_add_continuation(std::move(callback)); !added)
+	if (bool notAdded =
+			!handle || !handle->second.try_add_continuation(std::move(callback), "function");
+		notAdded)
 		callback();
 }
 
@@ -342,7 +407,9 @@ template <typename T>
 inline void arc::future<T>::async_wait_and_then(
 	arc::function<void(arc::result<T>)> && callback) const
 {
-	async_wait_and_then([c = std::move(callback), a = *this]() mutable { c(impl::get_result(a)); });
+	async_wait_and_then([c = std::move(callback), a = *this]() mutable {
+		c(impl::get_result(a));
+	});
 }
 
 template <typename T>
@@ -350,13 +417,14 @@ inline arc::result<T> arc::future<T>::active_wait()
 {
 	arc_TRACE_EVENT_SCOPED(arc_TRACE_CORO);
 
-	arc_CHECK_Precondition(handle);
+	if (handle)
+	{
+		std::stop_source stopSource;
 
-	std::stop_source stopSource;
+		async_wait_and_then([&stopSource] { stopSource.request_stop(); });
 
-	async_wait_and_then([&stopSource] { stopSource.request_stop(); });
-
-	handle->first.get_ctx().scheduler.assist(stopSource.get_token());
+		handle->first.get_ctx().scheduler.assist(stopSource.get_token());
+	}
 
 	return impl::get_result(*this);
 }
@@ -364,12 +432,7 @@ inline arc::result<T> arc::future<T>::active_wait()
 template <typename T>
 inline arc::result<T> arc::future<T>::try_wait()
 {
-	arc_CHECK_Precondition(handle);
-
-	if (handle->second.is_done())
-		return impl::get_result(*this);
-	else
-		return {};
+	return impl::try_get_result(*this);
 }
 
 template <typename T>
@@ -377,13 +440,17 @@ inline auto arc::future<T>::operator co_await()
 {
 	struct awaitable
 	{
-		bool await_ready() const noexcept { return false; }
+		bool await_ready() const noexcept
+		{
+			return !self.handle;
+		}
 
 		bool await_suspend(std::coroutine_handle<> awaiter)
 		{
 			arc_CHECK_Precondition(self.handle);
 
-			return self.handle->second.try_add_continuation(awaiter);
+			return self.handle->second.try_add_continuation(
+				awaiter, arc::detail::get_zone_info(awaiter.address()));
 		}
 
 		arc::result<T> await_resume() { return impl::get_result(self); }
@@ -410,6 +477,8 @@ inline arc::future<T>::future(arc::detail::handle && handle)
 template <typename T>
 struct arc::result<T>::impl
 {
+	using ptr_type = std::remove_reference_t<T>;
+
 	template <typename U>
 	static bool is_same_object(const result<T> & self, const result<U> & other)
 	{
@@ -420,9 +489,9 @@ struct arc::result<T>::impl
 	}
 
 	template <typename U>
-	static T * up_cast(U * other)
+	static ptr_type * up_cast(U * other)
 	{
-		return static_cast<T *>(other);
+		return static_cast<ptr_type *>(other);
 	}
 };
 
@@ -454,7 +523,7 @@ inline arc::result<T>::result(const result<U> & other)
 
 template <typename T>
 template <typename U>
-inline arc::result<T>::result(T * value, result<U> && other)
+inline arc::result<T>::result(std::remove_reference_t<T> * value, result<U> && other)
 	: value{ value }
 	, handle{ std::exchange(other.handle, nullptr) }
 {
@@ -464,7 +533,7 @@ inline arc::result<T>::result(T * value, result<U> && other)
 
 template <typename T>
 template <typename U>
-inline arc::result<T>::result(T * value, const result<U> & other)
+inline arc::result<T>::result(std::remove_reference_t<T> * value, const result<U> & other)
 	: value{ value }
 	, handle{ other.handle }
 {
@@ -544,7 +613,8 @@ arc::detail::handle arc::future<T>::extract_handle() &&
 }
 
 template <typename T>
-inline arc::result<T>::result(T * value, arc::detail::handle && handle) noexcept
+inline arc::result<T>::result(
+	std::remove_reference_t<T> * value, arc::detail::handle && handle) noexcept
 	: value{ value }
 	, handle{ std::move(handle) }
 {
@@ -552,13 +622,13 @@ inline arc::result<T>::result(T * value, arc::detail::handle && handle) noexcept
 }
 
 template <typename T>
-inline T * arc::result<T>::get() const noexcept
+inline std::remove_reference_t<T> * arc::result<T>::get() const noexcept
 {
 	return value;
 }
 
 template <typename T>
-inline T * arc::result<T>::operator->() const noexcept
+inline std::remove_reference_t<T> * arc::result<T>::operator->() const noexcept
 {
 	arc_CHECK_Precondition(*this);
 	return get();
@@ -601,38 +671,34 @@ void arc::detail::key_impl<F>::call(arc::detail::store_entry & storeEntry) const
 
 	arc::detail::control_block & controlBlock = storeEntry.second;
 
-	std::coroutine_handle<arc::detail::promise<arc::result_of_t<F>>> handle = [&] {
-		static constexpr bool isAlreadyCoro = arc::detail::is_coro_v<
-			typename arc::detail::reflect_function<std::remove_cvref_t<F>>::return_type>;
+	std::coroutine_handle handle =
+		[&] {
+			static constexpr bool isAlreadyCoro = arc::detail::is_coro_v<
+				typename arc::detail::reflect_function<std::remove_cvref_t<F>>::return_type>;
 
-		if constexpr (isAlreadyCoro)
-		{
-			return std::apply(*function_, arguments_);
-		}
-		else
-		{
-			auto wrapper =
-				[](const arc::detail::key_impl<F> * self) -> arc::coro<arc::result_of_t<F>> {
-				co_return std::apply(*self->function_, self->arguments_);
-			};
+			if constexpr (isAlreadyCoro)
+			{
+				return std::apply(*function_, arguments_);
+			}
+			else
+			{
+				auto wrapper =
+					[](const arc::detail::key_impl<F> * self) -> arc::coro<arc::result_of_t<F>> {
+					co_return std::apply(*self->function_, self->arguments_);
+				};
 
-			return wrapper(this);
-		}
-	}();
+				return wrapper(this);
+			}
+		}()
+			.extract_handle();
 
-	arc_CHECK_Require(!controlBlock.exception && !controlBlock.value);
+	arc_CHECK_Require(controlBlock.result.holds_nothing());
 
-	arc_CHECK_Require(!controlBlock.promiseBase);
+	auto & promise = handle.promise();
 
-	controlBlock.promiseBase = &handle.promise();
+	promise.set_self_handle(arc::detail::handle{ &storeEntry });
 
-	controlBlock.promiseBase->set_self_handle(arc::detail::handle{ &storeEntry });
-
-#ifdef arc_TRACE_INSTRUMENTATION_ENABLE
-	ctx.names.set_name(handle, controlBlock.promiseBase->name);
-#endif
-
-	ctx.schedule_on_worker_thread(controlBlock.promiseBase->self);
+	ctx.schedule_on_worker_thread(std::coroutine_handle<>{ handle });
 }
 
 template <typename T>

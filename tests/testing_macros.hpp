@@ -1,6 +1,6 @@
 #pragma once
 
-#if __has_include(<catch2/catch_test_macros.hpp>)
+#if arc_WITH_CATCH2
 	#include <catch2/catch_test_macros.hpp>
 #else
 	#include <cassert>

@@ -1,34 +1,37 @@
 #pragma once
 
-#include "arc/extra/non_copyable_non_movable.hpp"
-#include "arc/fwd.hpp"
-#include "arc/util/std.hpp"
+#include "arc/detail/name_store.hpp"
+#include "arc/util/non_copyable_non_movable.hpp"
+#include "arc/util/util.hpp"
+
+#include <condition_variable>
+#include <coroutine>
+#include <mutex>
+#include <optional>
+#include <stop_token>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #define arc_SCHEDULER_TRACE_LOCK 0
 
-struct arc::detail::scheduler : private arc::extra::non_copyable_non_movable
+namespace arc::detail
 {
-private:
-	struct CoroScheduleOperation
+	struct scheduler;
+}
+
+struct arc::detail::scheduler
+{
+public:
+	arc_NON_COPYABLE_NON_MOVABLE(scheduler);
+
+	struct task
 	{
-	public:
-		bool await_ready() const noexcept { return false; }
-
-		void await_suspend(std::coroutine_handle<> awaiter) const noexcept
-		{
-			scheduler.schedule(awaiter, timePoint, mainThread);
-		}
-
-		void await_resume() const noexcept {}
-
-		arc::detail::scheduler & scheduler;
-		std::optional<arc::time_point> timePoint;
-		bool mainThread = false;
+		arc::function<void()> function;
+		arc::detail::zone_info zone;
 	};
 
-public:
-	scheduler(
-		arc::detail::name_store & names, std::thread::id mainThreadId, size_t workerThreadCount);
+	scheduler(std::thread::id mainThreadId, size_t workerThreadCount);
 
 	~scheduler();
 
@@ -47,16 +50,30 @@ public:
 
 	auto schedule(const std::optional<arc::time_point> & timePoint, bool mainThread)
 	{
-		return CoroScheduleOperation{ *this, timePoint, mainThread };
+		struct Awaitable
+		{
+			bool await_ready() const noexcept { return false; }
+
+			void await_suspend(std::coroutine_handle<> awaiter) const noexcept
+			{
+				scheduler.schedule(
+					task{ awaiter, arc::detail::get_zone_info(awaiter.address()) }, timePoint,
+					mainThread);
+			}
+
+			void await_resume() const noexcept {}
+
+			arc::detail::scheduler & scheduler;
+			std::optional<arc::time_point> timePoint;
+			bool mainThread = false;
+		};
+
+		return Awaitable{ *this, timePoint, mainThread };
 	}
 
-	void schedule(
-		std::coroutine_handle<> awaiter, const std::optional<arc::time_point> & timePoint,
-		bool mainThread);
+	void schedule(task && task, const std::optional<arc::time_point> & timePoint, bool mainThread);
 
-	void schedule(arc::function<void()> && task, bool mainThread);
-
-	void unused(arc::detail::handle && handle);
+	void schedule(task && task, bool mainThread, bool highPrio);
 
 	static constexpr bool ArcSchedulerWorkPool_USING_QUEUE = false;
 
@@ -67,7 +84,7 @@ private:
 	void start_workers(size_t count);
 
 private:
-	struct ArcSchedulerWorkPool
+	struct work_pool
 	{
 #if arc_SCHEDULER_TRACE_LOCK
 		arc_TRACE_CONDITION_VARIABLE_ANY cv;
@@ -76,19 +93,22 @@ private:
 		std::condition_variable_any cv;
 		std::mutex mtx;
 #endif
-		arc_TRACE_CONTAINER_STACK(std::coroutine_handle<>) work;
-		std::vector<std::pair<arc::time_point, std::coroutine_handle<>>> timers;
 
-		size_t unusedCachesize = 0;
-		arc_TRACE_CONTAINER_QUEUE(arc::detail::handle) potentiallyUnused;
-		arc_TRACE_CONTAINER_STACK(arc::function<void()>) tasks;
+		using timed_task = std::pair<arc::time_point, task>;
+		/**
+		 * Ties are inserted after all the existing elements. Keep that in mind
+		 * if replacing with e.g. std::priority_queue which is not stable.
+		 */
+		arc_TRACE_CONTAINER_VECTOR(timed_task) timers;
+
+		/** poor man's multi-prio queue */
+		arc_TRACE_CONTAINER_QUEUE(task) highPrioTasks;
+		arc_TRACE_CONTAINER_STACK(task) tasks;
 	};
 
 private:
-	arc::detail::name_store & names;
-
-	ArcSchedulerWorkPool workerThreadWork;
-	ArcSchedulerWorkPool mainThreadWork;
+	work_pool workerThreadWork;
+	work_pool mainThreadWork;
 
 	std::vector<std::thread> workers;
 	std::stop_source stopSource;

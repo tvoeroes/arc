@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
+#include <print>
 #include <vector>
 
 struct CoroFilesystemEntrySize
@@ -12,7 +12,7 @@ struct CoroFilesystemEntrySize
 	uint64_t fileCount = 0;
 	uint64_t unsupportedEntries = 0;
 
-	void AddChild(const CoroFilesystemEntrySize & child)
+	void add_child(const CoroFilesystemEntrySize & child)
 	{
 		allFilesSizeBytes += child.allFilesSizeBytes;
 		folderCount += child.folderCount;
@@ -20,51 +20,52 @@ struct CoroFilesystemEntrySize
 		unsupportedEntries += child.unsupportedEntries;
 	}
 
-	void PrintCounts() const
+	void print_counts() const
 	{
-		std::cout << "allFilesSizeBytes = " << allFilesSizeBytes << "\n";
-		std::cout << "folderCount = " << folderCount << "\n";
-		std::cout << "fileCount = " << fileCount << "\n";
-		std::cout << "unsupportedEntries = " << unsupportedEntries << std::endl;
-	}
-
-	static std::string ToKey(const std::filesystem::path & path)
-	{
-		return path.lexically_normal().string();
-	}
-
-	static arc::coro<CoroFilesystemEntrySize> arc_make(arc::context & ctx, const std::string & path)
-	{
-		CoroFilesystemEntrySize result;
-
-		std::vector<arc::future<CoroFilesystemEntrySize>> subdirs;
-
-		for (const auto & entry : std::filesystem::directory_iterator{ path })
-		{
-			if (entry.is_directory())
-			{
-				subdirs.emplace_back(ctx(CoroFilesystemEntrySize::arc_make, ToKey(entry.path())));
-				result.folderCount += 1;
-			}
-			else if (entry.is_regular_file())
-			{
-				result.allFilesSizeBytes += entry.file_size();
-				result.fileCount += 1;
-			}
-			else
-			{
-				result.unsupportedEntries += 1;
-			}
-		}
-
-		std::vector subdirResults = co_await arc::all<CoroFilesystemEntrySize>{ ctx, subdirs };
-
-		for (const auto & subdir : subdirResults)
-			result.AddChild(*subdir);
-
-		co_return result;
+		std::println("allFilesSizeBytes = {}", allFilesSizeBytes);
+		std::println("folderCount = {}", folderCount);
+		std::println("fileCount = {}", fileCount);
+		std::println("unsupportedEntries = {}", unsupportedEntries);
 	}
 };
+
+static std::string to_key(const std::filesystem::path & path)
+{
+	return path.lexically_normal().string();
+}
+
+static arc::coro<CoroFilesystemEntrySize> get_filesystem_entry_size(
+	arc::context & ctx, const std::string & path)
+{
+	CoroFilesystemEntrySize result;
+
+	std::vector<arc::future<CoroFilesystemEntrySize>> subdirs;
+
+	for (const auto & entry : std::filesystem::directory_iterator{ path })
+	{
+		if (entry.is_directory())
+		{
+			subdirs.emplace_back(ctx[get_filesystem_entry_size, to_key(entry.path())]);
+			result.folderCount += 1;
+		}
+		else if (entry.is_regular_file())
+		{
+			result.allFilesSizeBytes += entry.file_size();
+			result.fileCount += 1;
+		}
+		else
+		{
+			result.unsupportedEntries += 1;
+		}
+	}
+
+	std::vector subdirResults = co_await arc::all<CoroFilesystemEntrySize>{ ctx, subdirs };
+
+	for (const auto & subdir : subdirResults)
+		result.add_child(*subdir);
+
+	co_return result;
+}
 
 /**
  * This program uses 10 threads to traverse the filesystem and compile a summary.
@@ -73,7 +74,7 @@ int main(int argc, char * argv[])
 {
 	if (argc < 2)
 	{
-		std::cerr << "Missing argument.\n";
+		std::println(stderr, "Missing argument.");
 		return EXIT_FAILURE;
 	}
 
@@ -84,21 +85,21 @@ int main(int argc, char * argv[])
 
 		arc::context ctx{ options };
 
-		const std::string key = CoroFilesystemEntrySize::ToKey(argv[1]);
+		const std::string key = to_key(argv[1]);
 
-		arc::future future = ctx(CoroFilesystemEntrySize::arc_make, key);
+		arc::future future = ctx[get_filesystem_entry_size, key];
 		arc::result result = future.active_wait();
 
-		result->PrintCounts();
+		result->print_counts();
 	}
 	catch (const std::exception & e)
 	{
-		std::cerr << e.what() << '\n';
+		std::println(stderr, "{}", e.what());
 		return EXIT_FAILURE;
 	}
 	catch (...)
 	{
-		std::cerr << "Unknown exception thrown.\n";
+		std::println(stderr, "Unknown exception thrown.");
 		return EXIT_FAILURE;
 	}
 
